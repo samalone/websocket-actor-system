@@ -28,6 +28,10 @@ a few problems for our use case:
 2. A real-time collaborative app benefits from the efficiency of websockets, but
    OpenAPI is based on REST.
 
+By using distributed actors instead of OpenAPI, we can write the client and
+server entirely in Swift and avoid the boilerplate code to convert to and from
+web REST calls.
+
 ## Design goals
 
 - The client should run on iOS and macOS.
