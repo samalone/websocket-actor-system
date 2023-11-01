@@ -38,6 +38,9 @@ let package = Package(
             ]),
         .testTarget(
             name: "WebSocketActorTests",
-            dependencies: ["WebSocketActors"]),
+            dependencies: ["WebSocketActors"],
+            swiftSettings: [
+                .unsafeFlags(["-Xfrontend", "-validate-tbd-against-ir=none"])
+            ]),
     ]
 )
