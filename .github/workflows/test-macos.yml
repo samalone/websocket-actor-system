@@ -11,13 +11,16 @@ on:
 jobs:
   test:
 
-    runs-on: macos-latest
+    runs-on: macos-13
 
     steps:
     - uses: actions/checkout@v3
+
+    # swift-actions/setup-swift@v1.25.0 seems to use macosx10.15.4, Swift 5.9.0, and Xcode_14.2
     - uses: swift-actions/setup-swift@v1.25.0       
       with:
         swift-version: "5.9"
+
     # - name: Build
     #   run: swift build -v
     - name: Run tests
