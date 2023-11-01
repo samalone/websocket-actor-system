@@ -1,0 +1,13 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Test Linux using Docker",
+            "type": "shell",
+            "command": "docker run -it --rm --mount src=\"$(pwd)\",target=/foo,type=bind swift /usr/bin/swift test --package-path /foo",
+            "problemMatcher": [
+                "$swiftc"
+            ]
+        }
+    ]
+}
