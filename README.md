@@ -1,5 +1,7 @@
 # WebSocketActorSystem
 
+[![macOS tests](https://github.com/samalone/websocket-actor-system/actions/workflows/test-macos.yml/badge.svg)](https://github.com/samalone/websocket-actor-system/actions/workflows/test-macos.yml) [![Ubuntu tests](https://github.com/samalone/websocket-actor-system/actions/workflows/test-ubuntu.yml/badge.svg)](https://github.com/samalone/websocket-actor-system/actions/workflows/test-ubuntu.yml)
+
 This is an implementation of Swift's
 [distributed actor system](https://www.swift.org/blog/distributed-actors/)
 designed to allow multiple clients to communicate with a single server over
