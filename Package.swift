@@ -4,16 +4,18 @@
 import PackageDescription
 
 let package = Package(
-    name: "WebsocketActorSystem",
+    name: "WebSocketActors",
     platforms: [
         .macOS(.v13),
         .iOS(.v16),
+        .watchOS(.v10),
+        .tvOS(.v17)
     ],
     products: [
         // Products define the executables and libraries a package produces, making them visible to other packages.
         .library(
-            name: "WebsocketActorSystem",
-            targets: ["WebsocketActorSystem"]),
+            name: "WebSocketActors",
+            targets: ["WebSocketActors"]),
     ],
     dependencies: [
         .package(url: "https://github.com/apple/swift-nio.git", from: "2.12.0"),
@@ -23,7 +25,7 @@ let package = Package(
         // Targets are the basic building blocks of a package, defining a module or a test suite.
         // Targets can depend on other targets in this package and products from dependencies.
         .target(
-            name: "WebsocketActorSystem",
+            name: "WebSocketActors",
             dependencies: [
                 // These dependencies are used by the WebSocketActorSystem
                 .product(name: "NIO", package: "swift-nio"),
@@ -32,7 +34,7 @@ let package = Package(
                 .product(name: "NIOTransportServices", package: "swift-nio-transport-services"),
             ]),
         .testTarget(
-            name: "WebsocketActorSystemTests",
-            dependencies: ["WebsocketActorSystem"]),
+            name: "WebSocketActorTests",
+            dependencies: ["WebSocketActors"]),
     ]
 )
