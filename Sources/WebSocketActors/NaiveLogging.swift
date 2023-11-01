@@ -6,11 +6,14 @@ Simplistic "fake" logging infrastructure, just so we can easily print and verify
 */
 
 import Foundation
+import Logging
+
+let logger = Logger(label: "com.llamagraphics.WebSocketActorSystem")
 
 public func debug(_ category: String, _ message: String, file: String = #fileID, line: Int = #line, function: String = #function) {
-    // ignore
+    logger.debug("[\(category)][\(file):\(line)](\(function)) \(message)")
 }
 
 public func log(_ category: String, _ message: String, file: String = #fileID, line: Int = #line, function: String = #function) {
-    print("[\(category)][\(file):\(line)](\(function)) \(message)")
+    logger.info("[\(category)][\(file):\(line)](\(function)) \(message)")
 }
