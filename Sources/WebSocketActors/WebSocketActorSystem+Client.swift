@@ -9,13 +9,18 @@ import Distributed
 import Foundation
 import NIO
 import NIOConcurrencyHelpers
-#if os(iOS) || os(macOS)
-import NIOTransportServices
-#endif
 import NIOCore
 import NIOHTTP1
 import NIOWebSocket
 import NIOFoundationCompat
+
+#if canImport(Network)
+    import NIOTransportServices
+    typealias PlatformBootstrap = NIOTSConnectionBootstrap
+#else
+    import NIOPosix
+    typealias PlatformBootstrap = ClientBootstrap
+#endif
 
 // ==== ----------------------------------------------------------------------------------------------------------------
 // - MARK: Client-side networking stack
@@ -23,7 +28,7 @@ import NIOFoundationCompat
 @available(iOS 16.0, *)
 extension WebSocketActorSystem {
     func startClient(host: String, port: Int) throws -> Channel {
-        let bootstrap = NIOTSConnectionBootstrap(group: group)
+        let bootstrap = PlatformBootstrap(group: group)
             // Enable SO_REUSEADDR.
                 .channelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
                 .channelInitializer { channel in

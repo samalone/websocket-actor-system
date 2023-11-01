@@ -10,13 +10,26 @@ import Distributed
 import Foundation
 import NIO
 import NIOConcurrencyHelpers
-#if os(iOS) || os(macOS)
-import NIOTransportServices
-#endif
 import NIOCore
 import NIOHTTP1
 import NIOWebSocket
 import NIOFoundationCompat
+
+#if canImport(Network)
+    import NIOTransportServices
+    typealias PlatformEventLoopGroup = NIOTSEventLoopGroup
+
+    func createEventLoopGroup() -> EventLoopGroup {
+        NIOTSEventLoopGroup()
+    }
+#else
+    import NIOPosix
+    typealias PlatformEventLoopGroup = MultiThreadedEventLoopGroup
+
+    func createEventLoopGroup() -> EventLoopGroup {
+        MultiThreadedEventLoopGroup(numberOfThreads: 1)
+    }
+#endif
 
 @available(iOS 16.0, *)
 public enum WebSocketWireEnvelope: Sendable, Codable {
@@ -114,7 +127,7 @@ public final class WebSocketActorSystem: DistributedActorSystem,
         self.group = { () -> EventLoopGroup in
             switch mode {
             case .clientFor:
-                return NIOTSEventLoopGroup()
+                return createEventLoopGroup()
             case .serverOnly:
                 return MultiThreadedEventLoopGroup(numberOfThreads: 1)
             }
