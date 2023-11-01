@@ -1,5 +1,5 @@
 import XCTest
-@testable import WebsocketActorSystem
+@testable import WebSocketActors
 
 final class WebsocketActorSystemTests: XCTestCase {
     func testExample() throws {
