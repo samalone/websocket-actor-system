@@ -16,9 +16,11 @@ jobs:
 
     steps:
     - uses: actions/checkout@v3
-    - uses: swift-actions/setup-swift@65540b95f51493d65f5e59e97dcef9629ddf11bf
+    - uses: swift-actions/setup-swift@v1.25.0       
       with:
         swift-version: "5.9"
+    - name: Get swift version
+      run: swift --version
     - name: Build
       run: swift build -v
     - name: Run tests
