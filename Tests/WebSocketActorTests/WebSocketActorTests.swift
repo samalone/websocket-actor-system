@@ -68,7 +68,7 @@ final class WebsocketActorSystemTests: XCTestCase {
     }
     
     func testLocalCall() async throws {
-        let alice = server.makeActorWithID(.random) {
+        let alice = server.makeActor() {
             Alice(actorSystem: server)
         }
         
@@ -77,11 +77,11 @@ final class WebsocketActorSystemTests: XCTestCase {
     }
     
     func testLocalCallback() async throws {
-        let alice = server.makeActorWithID(.random) {
+        let alice = server.makeActor() {
             Alice(actorSystem: server)
         }
         
-        let bob = server.makeActorWithID(.random) {
+        let bob = server.makeActor() {
             Bob(actorSystem: server)
         }
         

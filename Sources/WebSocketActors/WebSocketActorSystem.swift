@@ -298,16 +298,6 @@ public final class WebSocketActorSystem: DistributedActorSystem,
 
 extension WebSocketActorSystem {
 
-    /// We make up an ID for the remote bot; We know they are resolved and created on-demand
-    public func opponentBotID<Act>(for player: Act) -> ActorIdentity
-    where Act: Identifiable, Act.ID == ActorIdentity {
-        .init(protocol: "ws", host: host, port: port, id: "bot-\(player.id)")
-    }
-    
-    public func isBotID(_ id: ActorID) -> Bool {
-        return true
-    }
-
     public func registerOnDemandResolveHandler(resolveOnDemand: @escaping (ActorID) -> (any DistributedActor)?) {
         lock.lock()
         defer {
@@ -320,9 +310,18 @@ extension WebSocketActorSystem {
     @TaskLocal
     static var actorIDHint: ActorID?
 
-    public func makeActorWithID<Act>(_ id: ActorID, _ factory: () -> Act) -> Act
+    /// Create an actor with the specified id.
+    public func makeActor<Act>(id: ActorID, _ factory: () -> Act) -> Act
         where Act: DistributedActor, Act.ActorSystem == WebSocketActorSystem {
         Self.$actorIDHint.withValue(id) {
+            factory()
+        }
+    }
+    
+    /// Create an actor with a random id prefixed with the actor's type.
+    public func makeActor<Act>(_ factory: () -> Act) -> Act
+        where Act: DistributedActor, Act.ActorSystem == WebSocketActorSystem {
+            Self.$actorIDHint.withValue(.random(for: Act.self)) {
             factory()
         }
     }
