@@ -9,6 +9,8 @@ WebSockets. It is based on Apple's
 [TicTacFish](https://developer.apple.com/documentation/swift/tictacfish_implementing_a_game_using_distributed_actors)
 sample code.
 
+- [API documentation](https://samalone.github.io/websocket-actor-system/documentation/websocketactors/)
+
 ## Target use case
 
 This actor system is designed to be used in an iOS app that needs real-time
