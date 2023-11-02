@@ -18,17 +18,8 @@ import Logging
 
 #if canImport(Network)
     import NIOTransportServices
-
-    func createEventLoopGroup() -> EventLoopGroup {
-        NIOTSEventLoopGroup()
-    }
 #else
     import NIOPosix
-
-    func createEventLoopGroup() -> EventLoopGroup {
-        MultiThreadedEventLoopGroup(numberOfThreads: 1)
-        
-    }
 #endif
 
 @available(iOS 16.0, *)
@@ -103,6 +94,9 @@ public final class WebSocketActorSystem: DistributedActorSystem,
 
     // === Configuration
     public let mode: WebSocketActorSystemMode
+    
+    /// For a client, the host we are connected to.
+    /// For a server, the interface address we are listening on.
     public var host: String {
         switch mode {
         case .clientFor(let host, _):
@@ -111,11 +105,17 @@ public final class WebSocketActorSystem: DistributedActorSystem,
             return host
         }
     }
+    
+    /// For a client, the port we are connected to.
+    /// For a server, the port we are listening on.
     public var port: Int {
         switch mode {
         case .clientFor(_, let port):
             return port
         case .serverOnly(_, let port):
+            if let localPort = serverChannel?.localAddress?.port {
+                return localPort
+            }
             return port
         }
     }
@@ -124,18 +124,12 @@ public final class WebSocketActorSystem: DistributedActorSystem,
         self.mode = mode
         self.logger = logger.with(mode)
 
-        // Note: this sample system implementation assumes that clients are iOS devices,
-        // and as such will be always using NetworkFramework (via NIOTransportServices),
-        // for the client-side. This does not have to always be the case, but generalizing/making
-        // it configurable is left as an exercise for interested developers.
-        self.group = { () -> EventLoopGroup in
-            switch mode {
-            case .clientFor:
-                return createEventLoopGroup()
-            case .serverOnly:
-                return MultiThreadedEventLoopGroup(numberOfThreads: 1)
-            }
-        }()
+        // We prefer NIOTSEventLoopGroup where it is available.
+#if canImport(Networking)
+        self.group = NIOTSEventLoopGroup()
+#else
+        self.group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
+#endif
 
         // Start networking
         switch mode {
@@ -147,6 +141,10 @@ public final class WebSocketActorSystem: DistributedActorSystem,
         }
 
         logger.info("\(Self.self) initialized in mode: \(mode)")
+    }
+    
+    public func shutdownGracefully() async throws {
+        try await group.shutdownGracefully()
     }
 
     public func syncShutdownGracefully() {
@@ -265,16 +263,6 @@ public final class WebSocketActorSystem: DistributedActorSystem,
     func resolveAny(id: ActorID, resolveReceptionist: Bool = false) -> (any DistributedActor)? {
         lock.lock()
         defer { lock.unlock() }
-
-        guard id.protocol == "ws" else {
-            return nil
-        }
-        guard id.host == self.host else {
-            return nil
-        }
-        guard id.port == self.port else {
-            return nil
-        }
         
         let taggedLogger = logger.with(id).withOp()
 
@@ -498,16 +486,6 @@ extension WebSocketActorSystem {
     }
 
     func selectChannel(for actorID: ActorID) -> Channel {
-        guard actorID.protocol == "ws" else {
-            fatalError("Unexpected protocol in WS actor system assigned actor identity! Was: \(actorID)")
-        }
-        guard let host = actorID.host else {
-            fatalError("No port in WS actor system assigned actor identity! Was: \(actorID)")
-        }
-        guard let port = actorID.port else {
-            fatalError("No port in WS actor system assigned actor identity! Was: \(actorID)")
-        }
-
         // We implemented a pretty naive actor system; that only handles ONE connection to a backend.
         // In general, a websocket transport could open new connections as it notices identities to hosts.
         if mode.isClient && host == self.host && port == self.port {

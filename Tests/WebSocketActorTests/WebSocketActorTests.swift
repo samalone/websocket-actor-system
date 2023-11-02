@@ -56,16 +56,20 @@ extension Logger {
 // port number. By passing a port number of 0, we let the system assign us a port number.
 
 final class WebsocketActorSystemTests: XCTestCase {
-    func getLogger(fun: String = #function) -> Logger {
-        return Logger(label: fun).with(level: .trace)
+    var server: WebSocketActorSystem!
+    
+    override func setUp() async throws {
+        server = try WebSocketActorSystem(mode: .serverOnly(host: "localhost", port: 0),
+                                          logger: Logger(label: name).with(level: .trace))
+    }
+    
+    override func tearDown() async throws {
+        try await server.shutdownGracefully()
     }
     
     func testLocalCall() async throws {
-        let system = try WebSocketActorSystem(mode: .serverOnly(host: "localhost", port: 0),
-                                              logger: getLogger())
-        
-        let alice = system.makeActorWithID(.random) {
-            Alice(actorSystem: system)
+        let alice = server.makeActorWithID(.random) {
+            Alice(actorSystem: server)
         }
         
         let fortyThree = try await alice.addOne(42)
@@ -73,20 +77,16 @@ final class WebsocketActorSystemTests: XCTestCase {
     }
     
     func testLocalCallback() async throws {
-        let system = try WebSocketActorSystem(mode: .serverOnly(host: "localhost", port: 0),
-                                              logger: getLogger())
-        
-        let alice = system.makeActorWithID(.random) {
-            Alice(actorSystem: system)
+        let alice = server.makeActorWithID(.random) {
+            Alice(actorSystem: server)
         }
         
-        let bob = system.makeActorWithID(.random) {
-            Bob(actorSystem: system)
+        let bob = server.makeActorWithID(.random) {
+            Bob(actorSystem: server)
         }
         
         try await bob.move(near: alice)
         let greeting = try await bob.introduceYourself()
         XCTAssertEqual(greeting, "Nice to meet you, Bob.")
-        
     }
 }
