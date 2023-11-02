@@ -16,6 +16,7 @@ import NIOCore
 import NIOHTTP1
 import NIOWebSocket
 import NIOFoundationCompat
+import Logging
 
 @available(iOS 16.0, *)
 public class NIOInvocationDecoder: DistributedTargetInvocationDecoder {
@@ -23,10 +24,12 @@ public class NIOInvocationDecoder: DistributedTargetInvocationDecoder {
 
     let decoder: JSONDecoder
     let envelope: RemoteWebSocketCallEnvelope
+    let logger: Logger
     var argumentsIterator: Array<Data>.Iterator
 
     public init(system: WebSocketActorSystem, envelope: RemoteWebSocketCallEnvelope) {
         self.envelope = envelope
+        self.logger = system.logger
         self.argumentsIterator = envelope.args.makeIterator()
 
         let decoder = JSONDecoder()
@@ -41,17 +44,19 @@ public class NIOInvocationDecoder: DistributedTargetInvocationDecoder {
     }
 
     public func decodeNextArgument<Argument: Codable>() throws -> Argument {
+        let taggedLogger = logger.withOp()
+        
         guard let data = argumentsIterator.next() else {
-            log("decode-argument", "none left")
+            taggedLogger.trace("none left")
             throw WebSocketActorSystemError.notEnoughArgumentsInEnvelope(expected: Argument.self)
         }
 
         do {
             let value = try decoder.decode(Argument.self, from: data)
-            log("decode-argument", "decoded: \(value)")
+            taggedLogger.trace("decoded: \(value)")
             return value
         } catch {
-            log("decode-argument", "error: \(error)")
+            taggedLogger.trace("error: \(error)")
             throw error
         }
     }

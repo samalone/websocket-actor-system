@@ -9,9 +9,6 @@ import Distributed
 import Foundation
 import NIO
 import NIOConcurrencyHelpers
-#if os(iOS) || os(macOS)
-import NIOTransportServices
-#endif
 import NIOCore
 import NIOHTTP1
 import NIOWebSocket
@@ -43,7 +40,7 @@ extension WebSocketActorSystem {
 
                 // Set the handlers that are applied to the accepted Channels
                 .childChannelInitializer { channel in
-                    let httpHandler = HTTPHandler()
+                    let httpHandler = HTTPHandler(logger: self.logger)
                     let config: NIOHTTPServerUpgradeConfiguration = (
                         upgraders: [upgrader],
                         completionHandler: { _ in
@@ -67,4 +64,3 @@ extension WebSocketActorSystem {
         return channel
     }
 }
-

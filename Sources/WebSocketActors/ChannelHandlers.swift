@@ -14,6 +14,7 @@ import NIOHTTP1
 import Distributed
 import NIOWebSocket
 import Foundation
+import Logging
 
 public struct WebSocketReplyEnvelope: Sendable, Codable {
     let callID: WebSocketActorSystem.CallID
@@ -105,7 +106,8 @@ final class WebSocketMessageOutboundHandler: ChannelOutboundHandler {
     }
     
     func write(context: ChannelHandlerContext, data: NIOAny, promise: EventLoopPromise<Void>?) {
-        log("write", "unwrap \(Self.OutboundIn.self)")
+        let taggedLogger = actorSystem.logger.withOp()
+        taggedLogger.trace("unwrap \(Self.OutboundIn.self)")
         let envelope: WebSocketWireEnvelope = self.unwrapOutboundIn(data)
 
         switch envelope {
@@ -125,12 +127,12 @@ final class WebSocketMessageOutboundHandler: ChannelOutboundHandler {
             do {
                 var data = ByteBuffer()
                 try data.writeJSONEncodable(envelope, encoder: encoder)
-                log("outbound-call", "Write: \(envelope), to: \(context)")
+                taggedLogger.trace("Write: \(envelope), to: \(context)")
 
                 let frame = WebSocketFrame(fin: true, opcode: .text, data: data)
                 context.writeAndFlush(self.wrapOutboundOut(frame), promise: nil)
             } catch {
-                log("outbound-call", "Failed to serialize call [\(envelope)], error: \(error)")
+                taggedLogger.error("Failed to serialize call [\(envelope)], error: \(error)")
             }
         }
     }
@@ -143,7 +145,12 @@ final class HTTPHandler: ChannelInboundHandler, RemovableChannelHandler {
     typealias InboundIn = HTTPServerRequestPart
     typealias OutboundOut = HTTPServerResponsePart
     
+    private let logger: Logger
     private var responseBody: ByteBuffer!
+    
+    init(logger: Logger) {
+        self.logger = logger
+    }
     
     func handlerAdded(context: ChannelHandlerContext) {
         self.responseBody = context.channel.allocator.buffer(string: "<html><head></head><body><h2>Tic Tac Fish WS Server System</h2></body></html>")
@@ -154,7 +161,7 @@ final class HTTPHandler: ChannelInboundHandler, RemovableChannelHandler {
     }
     
     func channelRead(context: ChannelHandlerContext, data: NIOAny) {
-        log("write", "unwrap \(Self.InboundIn.self)")
+        logger.withOp().trace("unwrap \(Self.InboundIn.self)")
         let reqPart = self.unwrapInboundIn(data)
         
         // We're not interested in request bodies here: we're just serving up GET responses
@@ -225,7 +232,7 @@ final class WebSocketActorMessageInboundHandler: ChannelInboundHandler {
         case .text:
             var data = frame.unmaskedData
             let text = data.getString(at: 0, length: data.readableBytes) ?? ""
-            log("inbound-call", "Received: \(text), from: \(context)")
+            actorSystem.logger.withOp().trace("Received: \(text), from: \(context)")
 
             actorSystem.decodeAndDeliver(data: &data, from: context.remoteAddress, on: context.channel)
 

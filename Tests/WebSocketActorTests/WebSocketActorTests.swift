@@ -1,5 +1,6 @@
 import XCTest
 import Distributed
+import Logging
 @testable import WebSocketActors
 
 typealias DefaultDistributedActorSystem = WebSocketActorSystem
@@ -31,12 +32,37 @@ distributed actor Bob {
     }
 }
 
+extension Logger {
+    func with(level: Logger.Level) -> Logger {
+        var logger = self
+        logger.logLevel = level
+        return logger
+    }
+    
+    func with(_ actorID: ActorIdentity) -> Logger {
+        var logger = self
+        logger[metadataKey: "actorID"] = .stringConvertible(actorID)
+        return logger
+    }
+    
+    func with(_ system: WebSocketActorSystem) -> Logger {
+        var logger = self
+        logger[metadataKey: "system"] = .string("\(system.mode)")
+        return logger
+    }
+}
+
 // Note that since Swift runs these tests in parallel, they cannot use the same
 // port number. By passing a port number of 0, we let the system assign us a port number.
 
 final class WebsocketActorSystemTests: XCTestCase {
+    func getLogger(fun: String = #function) -> Logger {
+        return Logger(label: fun).with(level: .trace)
+    }
+    
     func testLocalCall() async throws {
-        let system = try WebSocketActorSystem(mode: .serverOnly(host: "localhost", port: 0))
+        let system = try WebSocketActorSystem(mode: .serverOnly(host: "localhost", port: 0),
+                                              logger: getLogger())
         
         let alice = system.makeActorWithID(.random) {
             Alice(actorSystem: system)
@@ -47,7 +73,8 @@ final class WebsocketActorSystemTests: XCTestCase {
     }
     
     func testLocalCallback() async throws {
-        let system = try WebSocketActorSystem(mode: .serverOnly(host: "localhost", port: 0))
+        let system = try WebSocketActorSystem(mode: .serverOnly(host: "localhost", port: 0),
+                                              logger: getLogger())
         
         let alice = system.makeActorWithID(.random) {
             Alice(actorSystem: system)
