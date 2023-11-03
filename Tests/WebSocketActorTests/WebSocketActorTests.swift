@@ -6,6 +6,10 @@ import Logging
 typealias DefaultDistributedActorSystem = WebSocketActorSystem
 
 distributed actor Alice {
+    distributed func receiveGift(_ present: String) {
+        print("Alice received \(present)")
+    }
+    
     distributed func addOne(_ n: Int) -> Int {
         return n + 1
     }
@@ -14,6 +18,11 @@ distributed actor Alice {
         let name = try await from.name
         return "Nice to meet you, \(name)."
     }
+}
+
+extension ActorIdentity {
+    static let alice = ActorIdentity(id: "alice")
+    static let bob = ActorIdentity(id: "bob")
 }
 
 distributed actor Bob {
@@ -60,7 +69,7 @@ final class WebsocketActorSystemTests: XCTestCase {
     
     override func setUp() async throws {
         server = try WebSocketActorSystem(mode: .serverOnly(host: "localhost", port: 0),
-                                          logger: Logger(label: name).with(level: .trace))
+                                          logger: Logger(label: "\(name) server").with(level: .trace))
     }
     
     override func tearDown() async throws {
@@ -88,5 +97,25 @@ final class WebsocketActorSystemTests: XCTestCase {
         try await bob.move(near: alice)
         let greeting = try await bob.introduceYourself()
         XCTAssertEqual(greeting, "Nice to meet you, Bob.")
+    }
+    
+    func testRemoteCall() async throws {
+        let client = try WebSocketActorSystem(mode: .clientFor(host: "localhost", port: server.port),
+                                          logger: Logger(label: "\(name) client").with(level: .trace))
+        
+        let serverAlice = server.makeActor(id: .alice) {
+            Alice(actorSystem: server)
+        }
+        
+        let clientAlice = try Alice.resolve(id: .alice, using: client)
+        
+//        try await Task.sleep(for: .seconds(2))
+        
+        try await clientAlice.receiveGift("mandrake")
+        
+//        XCTAssertEqual(result, 43)
+        
+        
+        try await client.shutdownGracefully()
     }
 }

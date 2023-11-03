@@ -125,17 +125,17 @@ public final class WebSocketActorSystem: DistributedActorSystem,
         self.logger = logger.with(mode)
 
         // We prefer NIOTSEventLoopGroup where it is available.
-#if canImport(Networking)
-        self.group = NIOTSEventLoopGroup()
-#else
-        self.group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
-#endif
-
         // Start networking
         switch mode {
         case .clientFor(let host, let port):
+#if canImport(Network)
+            self.group = NIOTSEventLoopGroup()
+#else
+            self.group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
+#endif
             self.clientChannel = try startClient(host: host, port: port)
         case .serverOnly(let host, let port):
+            self.group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
             self.serverChannel = try startServer(host: host, port: port)
             logger.info("server listening on port \(serverChannel?.localAddress?.port ?? -1)")
         }

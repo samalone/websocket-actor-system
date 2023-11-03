@@ -28,6 +28,7 @@ import NIOFoundationCompat
 @available(iOS 16.0, *)
 extension WebSocketActorSystem {
     func startClient(host: String, port: Int) throws -> Channel {
+        let upgradeSemaphore = DispatchSemaphore(value: 0)
         let bootstrap = PlatformBootstrap(group: group)
             // Enable SO_REUSEADDR.
                 .channelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
@@ -38,7 +39,10 @@ extension WebSocketActorSystem {
                     let websocketUpgrader = NIOWebSocketClientUpgrader(
                         requestKey: "OfS0wDaT5NoxF2gqm7Zj2YtetzM=",
                         upgradePipelineHandler: { (channel: Channel, _: HTTPResponseHead) in
-                            channel.pipeline.addHandlers(
+                            defer {
+                                upgradeSemaphore.signal()
+                            }
+                            return channel.pipeline.addHandlers(
                                 WebSocketMessageOutboundHandler(actorSystem: self),
                                 WebSocketActorMessageInboundHandler(actorSystem: self)
                                 // WebSocketActorReplyHandler(actorSystem: self)
@@ -57,6 +61,8 @@ extension WebSocketActorSystem {
                 }
 
         let channel = try bootstrap.connect(host: host, port: port).wait()
+        
+        upgradeSemaphore.wait()
 
         return channel
     }
