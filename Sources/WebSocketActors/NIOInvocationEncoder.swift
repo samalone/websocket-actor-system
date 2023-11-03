@@ -8,14 +8,6 @@ Invocation decoder from a NIO byte buffer.
 import Distributed
 import Foundation
 import NIO
-import NIOConcurrencyHelpers
-#if os(iOS) || os(macOS)
-import NIOTransportServices
-#endif
-import NIOCore
-import NIOHTTP1
-import NIOWebSocket
-import NIOFoundationCompat
 import Logging
 
 @available(iOS 16.0, *)
@@ -27,7 +19,7 @@ public class NIOInvocationDecoder: DistributedTargetInvocationDecoder {
     let logger: Logger
     var argumentsIterator: Array<Data>.Iterator
 
-    public init(system: WebSocketActorSystem, envelope: RemoteWebSocketCallEnvelope) {
+    internal init(system: WebSocketActorSystem, envelope: RemoteWebSocketCallEnvelope) {
         self.envelope = envelope
         self.logger = system.logger
         self.argumentsIterator = envelope.args.makeIterator()

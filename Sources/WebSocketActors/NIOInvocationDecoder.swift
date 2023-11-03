@@ -7,15 +7,6 @@ Invocation encoder into a NIO byte buffer.
 
 import Distributed
 import Foundation
-import NIO
-import NIOConcurrencyHelpers
-#if os(iOS) || os(macOS)
-import NIOTransportServices
-#endif
-import NIOCore
-import NIOHTTP1
-import NIOWebSocket
-import NIOFoundationCompat
 
 @available(iOS 16.0, *)
 public class NIOInvocationEncoder: DistributedTargetInvocationEncoder {

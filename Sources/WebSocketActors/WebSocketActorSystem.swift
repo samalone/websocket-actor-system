@@ -9,11 +9,6 @@ WebSocket based client/server style actor system implementation.
 import Distributed
 import Foundation
 import NIO
-import NIOConcurrencyHelpers
-import NIOCore
-import NIOHTTP1
-import NIOWebSocket
-import NIOFoundationCompat
 import Logging
 
 #if canImport(Network)
@@ -23,14 +18,14 @@ import Logging
 #endif
 
 @available(iOS 16.0, *)
-public enum WebSocketWireEnvelope: Sendable, Codable {
+internal enum WebSocketWireEnvelope: Sendable, Codable {
     case call(RemoteWebSocketCallEnvelope)
     case reply(WebSocketReplyEnvelope)
     case connectionClose
 }
 
 @available(iOS 16.0, *)
-public struct RemoteWebSocketCallEnvelope: Sendable, Codable {
+internal struct RemoteWebSocketCallEnvelope: Sendable, Codable {
     let callID: WebSocketActorSystem.CallID
     let recipient: ActorIdentity
     let invocationTarget: String

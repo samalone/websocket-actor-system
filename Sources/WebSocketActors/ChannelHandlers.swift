@@ -9,14 +9,13 @@ Channel handlers used to implement the networking layer of
 */
 
 import NIOCore
-import NIOPosix
 import NIOHTTP1
-import Distributed
 import NIOWebSocket
+import Distributed
 import Foundation
 import Logging
 
-public struct WebSocketReplyEnvelope: Sendable, Codable {
+internal struct WebSocketReplyEnvelope: Sendable, Codable {
     let callID: WebSocketActorSystem.CallID
     let sender: WebSocketActorSystem.ActorID?
     let value: Data
