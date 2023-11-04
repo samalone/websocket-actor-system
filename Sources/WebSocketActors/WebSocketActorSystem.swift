@@ -33,6 +33,8 @@ internal struct RemoteWebSocketCallEnvelope: Sendable, Codable {
     let args: [Data]
 }
 
+public struct WebSocketActorUnimplementedFeatureError: DistributedActorSystemError {}
+
 public enum WebSocketActorSystemMode {
     case clientFor(host: String, port: Int)
     case serverOnly(host: String, port: Int)
@@ -92,6 +94,7 @@ public final class WebSocketActorSystem: DistributedActorSystem,
     
     /// For a client, the host we are connected to.
     /// For a server, the interface address we are listening on.
+    @available(*, deprecated, message: "Should not be used to differentiate clients & servers")
     public var host: String {
         switch mode {
         case .clientFor(let host, _):
@@ -103,6 +106,7 @@ public final class WebSocketActorSystem: DistributedActorSystem,
     
     /// For a client, the port we are connected to.
     /// For a server, the port we are listening on.
+    @available(*, deprecated, message: "Should not be used to differentiate clients & servers")
     public var port: Int {
         switch mode {
         case .clientFor(_, let port):
@@ -421,7 +425,7 @@ extension WebSocketActorSystem {
         let taggedLogger = logger.withOp().with(actor.id)
         taggedLogger.trace("Call to: \(actor.id), target: \(target), target.identifier: \(target.identifier)")
 
-        let channel = self.selectChannel(for: actor.id)
+        let channel = try self.selectChannel(for: actor.id)
         taggedLogger.debug("channel: \(channel)")
 
         taggedLogger.trace("Prepare [\(target)] call...")
@@ -458,7 +462,7 @@ extension WebSocketActorSystem {
         let taggedLogger = logger.withOp().with(actor.id)
         taggedLogger.trace("Call to: \(actor.id), target: \(target), target.identifier: \(target.identifier)")
         
-        let channel = selectChannel(for: actor.id)
+        let channel = try selectChannel(for: actor.id)
         taggedLogger.debug("channel: \(channel)")
         
         taggedLogger.trace("Prepare [\(target)] call...")
@@ -479,7 +483,7 @@ extension WebSocketActorSystem {
         taggedLogger.trace("COMPLETED CALL: \(target)")
     }
 
-    func selectChannel(for actorID: ActorID) -> Channel {
+    func selectChannel(for actorID: ActorID) throws -> Channel {
         // We implemented a pretty naive actor system; that only handles ONE connection to a backend.
         // In general, a websocket transport could open new connections as it notices identities to hosts.
         if mode.isClient && host == self.host && port == self.port {
@@ -490,7 +494,8 @@ extension WebSocketActorSystem {
             fatalError("Server selecting specific connections to send messages to is not implemented;" +
                        "This would allow the server to *initiate* request/reply exchanges, rather than only perform replies.")
         } else {
-            fatalError("Not supported: \(self.mode) & \(actorID)")
+            logger.error("Not supported: \(self.mode) & \(actorID)")
+            throw WebSocketActorUnimplementedFeatureError()
         }
     }
 
