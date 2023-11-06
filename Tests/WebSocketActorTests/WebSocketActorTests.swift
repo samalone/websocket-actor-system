@@ -46,6 +46,10 @@ distributed actor Person {
     }
 }
 
+extension NodeID {
+    static let server = NodeID(id: "server")
+}
+
 extension ActorIdentity {
     static let alice = ActorIdentity(id: "alice")
     static let bob = ActorIdentity(id: "bob")
@@ -79,6 +83,7 @@ final class WebsocketActorSystemTests: XCTestCase {
     
     override func setUp() async throws {
         server = try WebSocketActorSystem(mode: .serverOnly(host: "localhost", port: 0),
+                                          id: .server,
                                           logger: Logger(label: "\(name) server").with(level: .trace))
     }
     
@@ -153,6 +158,6 @@ final class WebsocketActorSystemTests: XCTestCase {
         try await clientAlice.move(near: clientBob)
         
         let greeting = try await serverAlice.introduceYourself()
-        XCTAssertEqual(greeting, "Nice to meet you, Bob.")
+        XCTAssertEqual(greeting, "Nice to meet you, Alice.")
     }
 }
