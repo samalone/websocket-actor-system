@@ -33,10 +33,6 @@ internal struct RemoteWebSocketCallEnvelope: Sendable, Codable {
     let args: [Data]
 }
 
-public struct WebSocketActorUnimplementedFeatureError: DistributedActorSystemError {}
-public struct MissingNodeIDError: DistributedActorSystemError {}
-public struct NoChannelToNodeError: DistributedActorSystemError {}
-
 public enum WebSocketActorSystemMode {
     case clientFor(server: NodeAddress)
     case serverOnly(host: String, port: Int)
@@ -107,8 +103,7 @@ public final class WebSocketActorSystem: DistributedActorSystem,
         self.nodeID = id
         self.mode = mode
         self.logger = logger.with(mode)
-
-        // We prefer NIOTSEventLoopGroup where it is available.
+        
         // Start networking
         switch mode {
         case .clientFor(let serverAddress):
@@ -123,7 +118,7 @@ public final class WebSocketActorSystem: DistributedActorSystem,
             self.channel = try startServer(host: host, port: port)
             logger.info("server listening on port \(localPort)")
         }
-
+        
         logger.info("\(Self.self) initialized in mode: \(mode)")
     }
     
@@ -494,13 +489,13 @@ extension WebSocketActorSystem {
             // has a NodeID and we have a mapping from the NodeID to the Channel.
             guard let nodeID = actorID.node else {
                 logger.error("The nodeID for remote actor \(actorID) is missing.")
-                throw MissingNodeIDError()
+                throw WebSocketActorSystemError.missingNodeID(id: actorID)
             }
             self.lock.lock()
             defer { self.lock.unlock() }
             guard let channel = nodeRegistry.channel(for: nodeID) else {
                 logger.error("There is not currently a channel for nodeID \(nodeID)")
-                throw NoChannelToNodeError()
+                throw WebSocketActorSystemError.noChannelToNode(id: nodeID)
             }
             return channel
         }
@@ -585,4 +580,16 @@ public enum WebSocketActorSystemError: Error, DistributedActorSystemError {
     case failedDecodingResponse(data: Data, error: Error)
     case decodingError(error: Error)
     case resolveFailed(id: WebSocketActorSystem.ActorID)
+    
+    /// We are trying to send a message to a remote actor, but that actor does not
+    /// have a NodeIdentity. This probably means that the remote node passed us an actor
+    /// that was not constructed using the `WebSocketActorSystem.makeActor(id:_:)`,
+    /// as it should have been.
+    case missingNodeID(id: WebSocketActorSystem.ActorID)
+    
+    /// We are trying to send a message to a remote actor, but we do not currently
+    /// have an open `Channel` to the remote node. This is currently an error.
+    /// Future versions of this library may attempt to reconnect to the remote node
+    /// instead of throwing this error.
+    case noChannelToNode(id: NodeIdentity)
 }

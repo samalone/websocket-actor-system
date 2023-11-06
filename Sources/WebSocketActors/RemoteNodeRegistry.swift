@@ -8,10 +8,19 @@
 import Foundation
 import NIO
 
-public struct RemoteNodeRegistry {
+/// The ``RemoteNodeRegistry`` maintains a three-way association between a
+/// ``NodeIdentity``, a ``NodeAddress``, and a ``Channel``. This allows us to
+/// find the channel we need to communicate with an actor, and reconnect to a server
+/// if the original connection is broken.
+///
+/// > Important: This structure is intentionally not thread-safe because it is used
+/// from synchronous code in the ``WebSocketActorSystem``. That code uses
+/// a manual lock to ensure safe access to this structure. All uses of this structure
+/// must be protected by that lock.
+struct RemoteNodeRegistry {
     var byNodeID: Dictionary<NodeIdentity, RemoteNodeConnection> = [:]
     
-    public mutating func register(id: NodeIdentity, address: NodeAddress) {
+    mutating func register(id: NodeIdentity, address: NodeAddress) {
         if let rnc = byNodeID[id] {
             // We don't allow re-registration of a node at a different address,
             // so just confirm that the address has not changed.
@@ -22,7 +31,7 @@ public struct RemoteNodeRegistry {
         }
     }
     
-    public mutating func register(id: NodeIdentity, channel: Channel) {
+    mutating func register(id: NodeIdentity, channel: Channel) {
         if let rnc = byNodeID[id] {
             rnc.channel = channel
         }
@@ -31,7 +40,7 @@ public struct RemoteNodeRegistry {
         }
     }
     
-    public mutating func channelClosed(channel: Channel) {
+    mutating func channelClosed(channel: Channel) {
         for rnc in byNodeID.values {
             if rnc.channel === channel {
                 rnc.channel = nil
@@ -39,17 +48,17 @@ public struct RemoteNodeRegistry {
         }
     }
     
-    public func channel(for nodeID: NodeIdentity) -> Channel? {
+    func channel(for nodeID: NodeIdentity) -> Channel? {
         guard let rnc = byNodeID[nodeID] else { return nil }
         return rnc.channel
     }
     
-    public func address(for nodeID: NodeIdentity) -> NodeAddress? {
+    func address(for nodeID: NodeIdentity) -> NodeAddress? {
         guard let rnc = byNodeID[nodeID] else { return nil }
         return rnc.address
     }
     
-    public func nodeID(for channel: Channel) -> NodeIdentity? {
+    func nodeID(for channel: Channel) -> NodeIdentity? {
         for rnc in byNodeID.values {
             if rnc.channel === channel {
                 return rnc.id
