@@ -2,38 +2,65 @@
 See LICENSE folder for this sample’s licensing information.
 
 Abstract:
-Invocation encoder into a NIO byte buffer.
+Invocation decoder from a NIO byte buffer.
 */
 
 import Distributed
 import Foundation
+import NIO
+import Logging
 
 @available(iOS 16.0, *)
-public class NIOInvocationEncoder: DistributedTargetInvocationEncoder {
+public class NIOInvocationDecoder: DistributedTargetInvocationDecoder {
     public typealias SerializationRequirement = any Codable
-    var genericSubs: [String] = []
-    var argumentData: [Data] = []
 
-    public func recordGenericSubstitution<T>(_ type: T.Type) throws {
-        if let name = _mangledTypeName(T.self) {
-            genericSubs.append(name)
+    let decoder: JSONDecoder
+    let envelope: RemoteWebSocketCallEnvelope
+    let logger: Logger
+    let channel: Channel
+    var argumentsIterator: Array<Data>.Iterator
+
+    internal init(system: WebSocketActorSystem, envelope: RemoteWebSocketCallEnvelope, channel: Channel) {
+        self.envelope = envelope
+        self.logger = system.logger
+        self.channel = channel
+        self.argumentsIterator = envelope.args.makeIterator()
+
+        let decoder = JSONDecoder()
+        decoder.userInfo[.actorSystemKey] = system
+        decoder.userInfo[.channelKey] = channel
+        self.decoder = decoder
+    }
+
+    public func decodeGenericSubstitutions() throws -> [Any.Type] {
+        return envelope.genericSubs.compactMap { name in
+            return _typeByName(name)
         }
     }
 
-    public func recordArgument<Value: Codable>(_ argument: RemoteCallArgument<Value>) throws {
-        let data = try JSONEncoder().encode(argument.value)
-        self.argumentData.append(data)
+    public func decodeNextArgument<Argument: Codable>() throws -> Argument {
+        let taggedLogger = logger.withOp()
+        
+        guard let data = argumentsIterator.next() else {
+            taggedLogger.trace("none left")
+            throw WebSocketActorSystemError.notEnoughArgumentsInEnvelope(expected: Argument.self)
+        }
+
+        do {
+            let value = try decoder.decode(Argument.self, from: data)
+            taggedLogger.trace("decoded: \(value)")
+            return value
+        } catch {
+            taggedLogger.trace("error: \(error)")
+            throw error
+        }
     }
 
-    public func recordReturnType<R: Codable>(_ type: R.Type) throws {
-        // noop, no need to record it in this system
+    public func decodeErrorType() throws -> Any.Type? {
+        nil // not encoded, ok
     }
 
-    public func recordErrorType<E: Error>(_ type: E.Type) throws {
-        // noop, no need to record it in this system
-    }
-
-    public func doneRecording() throws {
-        // noop, nothing to do in this system
+    public func decodeReturnType() throws -> Any.Type? {
+        nil // not encoded, ok
     }
 }

@@ -34,7 +34,7 @@ internal struct RemoteWebSocketCallEnvelope: Sendable, Codable {
 }
 
 public enum WebSocketActorSystemMode {
-    case clientFor(host: String, port: Int)
+    case clientFor(server: NodeAddress)
     case serverOnly(host: String, port: Int)
 
     var isClient: Bool {
@@ -69,7 +69,11 @@ public final class WebSocketActorSystem: DistributedActorSystem,
     public static let defaultLogger = Logger(label: "WebSocketActors")
 
     private let lock = NSLock()
+    
+    /// A mapping from ActorID to actor for the local actors only.
+    /// Remote actors are not part of this dictionary.
     private var managedActors: [ActorID: any DistributedActor] = [:]
+    public let nodeID: NodeIdentity
     public let logger: Logger
 
     // === Handle replies
@@ -79,8 +83,8 @@ public final class WebSocketActorSystem: DistributedActorSystem,
 
     // ==== Channels
     let group: EventLoopGroup
-    private var serverChannel: Channel?
-    private var clientChannel: Channel?
+    private var channel: Channel?
+    private var nodeRegistry = RemoteNodeRegistry()
 
     // === On-Demand resolve handler
 
@@ -90,52 +94,38 @@ public final class WebSocketActorSystem: DistributedActorSystem,
     // === Configuration
     public let mode: WebSocketActorSystemMode
     
-    /// For a client, the host we are connected to.
-    /// For a server, the interface address we are listening on.
-    public var host: String {
-        switch mode {
-        case .clientFor(let host, _):
-            return host
-        case .serverOnly(let host, _):
-            return host
-        }
-    }
-    
-    /// For a client, the port we are connected to.
-    /// For a server, the port we are listening on.
-    public var port: Int {
-        switch mode {
-        case .clientFor(_, let port):
-            return port
-        case .serverOnly(_, let port):
-            if let localPort = serverChannel?.localAddress?.port {
-                return localPort
-            }
-            return port
-        }
+    /// The local port number, or -1 if there is no channel open
+    public var localPort: Int {
+        channel?.localAddress?.port ?? -1
     }
 
-    public init(mode: WebSocketActorSystemMode, logger: Logger = defaultLogger) throws {
+    public init(mode: WebSocketActorSystemMode, id: NodeIdentity = .random(), logger: Logger = defaultLogger) throws {
+        self.nodeID = id
         self.mode = mode
         self.logger = logger.with(mode)
-
-        // We prefer NIOTSEventLoopGroup where it is available.
+        
         // Start networking
         switch mode {
-        case .clientFor(let host, let port):
+        case .clientFor(let serverAddress):
 #if canImport(Network)
             self.group = NIOTSEventLoopGroup()
 #else
             self.group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
 #endif
-            self.clientChannel = try startClient(host: host, port: port)
+            self.channel = try startClient(host: serverAddress.host, port: serverAddress.port)
         case .serverOnly(let host, let port):
             self.group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
-            self.serverChannel = try startServer(host: host, port: port)
-            logger.info("server listening on port \(serverChannel?.localAddress?.port ?? -1)")
+            self.channel = try startServer(host: host, port: port)
+            logger.info("server listening on port \(localPort)")
         }
-
+        
         logger.info("\(Self.self) initialized in mode: \(mode)")
+    }
+    
+    func associate(nodeID: NodeIdentity, with channel: Channel) {
+        self.lock.lock()
+        defer { self.lock.unlock() }
+        nodeRegistry.register(id: nodeID, channel: channel)
     }
     
     public func shutdownGracefully() async throws {
@@ -178,6 +168,7 @@ public final class WebSocketActorSystem: DistributedActorSystem,
         return .init(id: "\(uuid)")
     }
 
+    /// Register the actor as a local actor.
     public func actorReady<Act>(_ actor: Act) where Act: DistributedActor, ActorID == Act.ID {
 //        log("actorReady[\(self.mode)]", "resign ID: \(actor.id)")
         logger.info("actorReady", metadata: ["actorID": .stringConvertible(actor.id)])
@@ -194,6 +185,7 @@ public final class WebSocketActorSystem: DistributedActorSystem,
         self.managedActors[actor.id] = actor
     }
 
+    /// Unregister the actors as a local actor.
     public func resignID(_ id: ActorID) {
 //        log("resignID[\(self.mode)]", "resign ID: \(id)")
         logger.info("resignID", metadata: ["actorID": .stringConvertible(id)])
@@ -208,6 +200,9 @@ public final class WebSocketActorSystem: DistributedActorSystem,
     // Trick to allow resolve() re-entrancy while still holding the `lock`
     @TaskLocal private static var alreadyLocked: Bool = false
     
+    /// Attempt to resolve the `id` to a local actor.
+    /// Returns `nil` if the id cannot be resolved locally, which implies the id
+    /// represents a remote actor.
     public func resolve<Act>(id: ActorID, as actorType: Act.Type) throws -> Act?
     where Act: DistributedActor, Act.ID == ActorID {
         if !Self.alreadyLocked {
@@ -305,18 +300,18 @@ extension WebSocketActorSystem {
     @TaskLocal
     static var actorIDHint: ActorID?
 
-    /// Create an actor with the specified id.
+    /// Create a local actor with the specified id.
     public func makeActor<Act>(id: ActorID, _ factory: () -> Act) -> Act
-        where Act: DistributedActor, Act.ActorSystem == WebSocketActorSystem {
-        Self.$actorIDHint.withValue(id) {
+    where Act: DistributedActor, Act.ActorSystem == WebSocketActorSystem {
+        Self.$actorIDHint.withValue(id.with(nodeID)) {
             factory()
         }
     }
     
-    /// Create an actor with a random id prefixed with the actor's type.
+    /// Create a local actor with a random id prefixed with the actor's type.
     public func makeActor<Act>(_ factory: () -> Act) -> Act
         where Act: DistributedActor, Act.ActorSystem == WebSocketActorSystem {
-            Self.$actorIDHint.withValue(.random(for: Act.self)) {
+            Self.$actorIDHint.withValue(.random(for: Act.self, node: nodeID)) {
             factory()
         }
     }
@@ -366,7 +361,7 @@ extension WebSocketActorSystem {
             taggedLogger.debug("Handler: \(anyRecipient)")
 
             do {
-                var decoder = Self.InvocationDecoder(system: self, envelope: envelope)
+                var decoder = Self.InvocationDecoder(system: self, envelope: envelope, channel: channel)
                 func doExecuteDistributedTarget<Act: DistributedActor>(recipient: Act) async throws {
                     taggedLogger.trace("executeDistributedTarget")
                     try await executeDistributedTarget(
@@ -421,7 +416,7 @@ extension WebSocketActorSystem {
         let taggedLogger = logger.withOp().with(actor.id)
         taggedLogger.trace("Call to: \(actor.id), target: \(target), target.identifier: \(target.identifier)")
 
-        let channel = self.selectChannel(for: actor.id)
+        let channel = try self.selectChannel(for: actor.id)
         taggedLogger.debug("channel: \(channel)")
 
         taggedLogger.trace("Prepare [\(target)] call...")
@@ -458,7 +453,7 @@ extension WebSocketActorSystem {
         let taggedLogger = logger.withOp().with(actor.id)
         taggedLogger.trace("Call to: \(actor.id), target: \(target), target.identifier: \(target.identifier)")
         
-        let channel = selectChannel(for: actor.id)
+        let channel = try selectChannel(for: actor.id)
         taggedLogger.debug("channel: \(channel)")
         
         taggedLogger.trace("Prepare [\(target)] call...")
@@ -479,18 +474,30 @@ extension WebSocketActorSystem {
         taggedLogger.trace("COMPLETED CALL: \(target)")
     }
 
-    func selectChannel(for actorID: ActorID) -> Channel {
-        // We implemented a pretty naive actor system; that only handles ONE connection to a backend.
-        // In general, a websocket transport could open new connections as it notices identities to hosts.
-        if mode.isClient && host == self.host && port == self.port {
+    /// Return the Channel we should use to communicate with the given actor..
+    /// Throws an exception if the actor is not reachable.
+    func selectChannel(for actorID: ActorID) throws -> Channel {
+        switch mode {
+        case .clientFor:
+            // On the client, any actor without a known NodeID is assumed to be on the server.
             self.lock.lock()
             defer { self.lock.unlock() }
-            return clientChannel!
-        } else if mode.isServer && host != self.host && port == self.port {
-            fatalError("Server selecting specific connections to send messages to is not implemented;" +
-                       "This would allow the server to *initiate* request/reply exchanges, rather than only perform replies.")
-        } else {
-            fatalError("Not supported: \(self.mode) & \(actorID)")
+            return channel!
+            
+        case .serverOnly:
+            // On the server, we can only know where to send the message if the actor
+            // has a NodeID and we have a mapping from the NodeID to the Channel.
+            guard let nodeID = actorID.node else {
+                logger.error("The nodeID for remote actor \(actorID) is missing.")
+                throw WebSocketActorSystemError.missingNodeID(id: actorID)
+            }
+            self.lock.lock()
+            defer { self.lock.unlock() }
+            guard let channel = nodeRegistry.channel(for: nodeID) else {
+                logger.error("There is not currently a channel for nodeID \(nodeID)")
+                throw WebSocketActorSystemError.noChannelToNode(id: nodeID)
+            }
+            return channel
         }
     }
 
@@ -573,4 +580,16 @@ public enum WebSocketActorSystemError: Error, DistributedActorSystemError {
     case failedDecodingResponse(data: Data, error: Error)
     case decodingError(error: Error)
     case resolveFailed(id: WebSocketActorSystem.ActorID)
+    
+    /// We are trying to send a message to a remote actor, but that actor does not
+    /// have a NodeIdentity. This probably means that the remote node passed us an actor
+    /// that was not constructed using the `WebSocketActorSystem.makeActor(id:_:)`,
+    /// as it should have been.
+    case missingNodeID(id: WebSocketActorSystem.ActorID)
+    
+    /// We are trying to send a message to a remote actor, but we do not currently
+    /// have an open `Channel` to the remote node. This is currently an error.
+    /// Future versions of this library may attempt to reconnect to the remote node
+    /// instead of throwing this error.
+    case noChannelToNode(id: NodeIdentity)
 }

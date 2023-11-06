@@ -5,33 +5,38 @@ import Logging
 
 typealias DefaultDistributedActorSystem = WebSocketActorSystem
 
-distributed actor Alice {
+distributed actor Person {
+    private var _lastGift = "nothing"
+    private var _name: String
+    var neighbor: Person? = nil
+    
+    init(actorSystem: WebSocketActorSystem, name: String) {
+        self.actorSystem = actorSystem
+        self._name = name
+    }
+    
+    distributed var lastGift: String {
+        _lastGift
+    }
+    
+    distributed var name: String {
+        _name
+    }
+    
     distributed func receiveGift(_ present: String) {
-        print("Alice received \(present)")
+        _lastGift = present
     }
     
     distributed func addOne(_ n: Int) -> Int {
         return n + 1
     }
     
-    distributed func howdy(from: Bob) async throws -> String {
+    distributed func howdy(from: Person) async throws -> String {
         let name = try await from.name
         return "Nice to meet you, \(name)."
     }
-}
-
-extension ActorIdentity {
-    static let alice = ActorIdentity(id: "alice")
-    static let bob = ActorIdentity(id: "bob")
-}
-
-distributed actor Bob {
-    var neighbor: Alice? = nil
-    distributed var name: String {
-        "Bob"
-    }
     
-    distributed func move(near: Alice) {
+    distributed func move(near: Person) {
         neighbor = near
     }
     
@@ -39,6 +44,15 @@ distributed actor Bob {
         guard let neighbor else { return "I'm all alone" }
         return try await neighbor.howdy(from: self)
     }
+}
+
+extension NodeIdentity {
+    static let server = NodeIdentity(id: "server")
+}
+
+extension ActorIdentity {
+    static let alice = ActorIdentity(id: "alice")
+    static let bob = ActorIdentity(id: "bob")
 }
 
 extension Logger {
@@ -69,6 +83,7 @@ final class WebsocketActorSystemTests: XCTestCase {
     
     override func setUp() async throws {
         server = try WebSocketActorSystem(mode: .serverOnly(host: "localhost", port: 0),
+                                          id: .server,
                                           logger: Logger(label: "\(name) server").with(level: .trace))
     }
     
@@ -78,7 +93,7 @@ final class WebsocketActorSystemTests: XCTestCase {
     
     func testLocalCall() async throws {
         let alice = server.makeActor() {
-            Alice(actorSystem: server)
+            Person(actorSystem: server, name: "Alice")
         }
         
         let fortyThree = try await alice.addOne(42)
@@ -87,11 +102,11 @@ final class WebsocketActorSystemTests: XCTestCase {
     
     func testLocalCallback() async throws {
         let alice = server.makeActor() {
-            Alice(actorSystem: server)
+            Person(actorSystem: server, name: "Alice")
         }
         
         let bob = server.makeActor() {
-            Bob(actorSystem: server)
+            Person(actorSystem: server, name: "Bob")
         }
         
         try await bob.move(near: alice)
@@ -99,23 +114,50 @@ final class WebsocketActorSystemTests: XCTestCase {
         XCTAssertEqual(greeting, "Nice to meet you, Bob.")
     }
     
-    func testRemoteCall() async throws {
-        let client = try WebSocketActorSystem(mode: .clientFor(host: "localhost", port: server.port),
+    func testRemoteCalls() async throws {
+        let client = try WebSocketActorSystem(mode: .clientFor(server: NodeAddress(scheme: "ws", host: "localhost", port: server.localPort)),
                                           logger: Logger(label: "\(name) client").with(level: .trace))
         
+        // Create the real Alice on the server
         let serverAlice = server.makeActor(id: .alice) {
-            Alice(actorSystem: server)
+            Person(actorSystem: server, name: "Alice")
         }
         
-        let clientAlice = try Alice.resolve(id: .alice, using: client)
+        // Create a local reference to Alice on the client
+        let clientAlice = try Person.resolve(id: .alice, using: client)
         
-//        try await Task.sleep(for: .seconds(2))
-        
+        // Send Alice a message without needing a reply
         try await clientAlice.receiveGift("mandrake")
+        // Make sure Alice received the gift.
+        let gift = try await serverAlice.lastGift
+        XCTAssertEqual(gift, "mandrake")
         
-//        XCTAssertEqual(result, 43)
-        
+        // Send Alice a message that returns a result
+        let result = try await clientAlice.addOne(42)
+        XCTAssertEqual(result, 43)
         
         try await client.shutdownGracefully()
+    }
+    
+    func testServerPush() async throws {
+        let client = try WebSocketActorSystem(mode: .clientFor(server: NodeAddress(scheme: "ws", host: "localhost", port: server.localPort)),
+                                          logger: Logger(label: "\(name) client").with(level: .trace))
+        
+        // Create the real Alice on the server
+        let serverAlice = server.makeActor(id: .alice) {
+            Person(actorSystem: server, name: "Alice")
+        }
+        
+        // Create a local reference to Alice on the client
+        let clientAlice = try Person.resolve(id: .alice, using: client)
+        
+        let clientBob = client.makeActor(id: .bob) {
+            Person(actorSystem: client, name: "Bob")
+        }
+        
+        try await clientAlice.move(near: clientBob)
+        
+        let greeting = try await serverAlice.introduceYourself()
+        XCTAssertEqual(greeting, "Nice to meet you, Alice.")
     }
 }

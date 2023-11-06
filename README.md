@@ -3,7 +3,7 @@
 [![macOS tests](https://github.com/samalone/websocket-actor-system/actions/workflows/test-macos.yml/badge.svg)](https://github.com/samalone/websocket-actor-system/actions/workflows/test-macos.yml) [![Ubuntu tests](https://github.com/samalone/websocket-actor-system/actions/workflows/test-ubuntu.yml/badge.svg)](https://github.com/samalone/websocket-actor-system/actions/workflows/test-ubuntu.yml)
 
 This is an implementation of Swift's
-[distributed actor system](https://www.swift.org/blog/distributed-actors/)
+[distributed actor system](https://developer.apple.com/documentation/distributed)
 designed to allow multiple clients to communicate with a single server over
 WebSockets. It is based on Apple's
 [TicTacFish](https://developer.apple.com/documentation/swift/tictacfish_implementing_a_game_using_distributed_actors)

@@ -15,10 +15,6 @@ final class ActorIdentityTests: XCTestCase {
         
         XCTAssertNotEqual(ActorIdentity.random(), ActorIdentity.random())
         
-        XCTAssert(ActorIdentity.random(for: Alice.self).id.starts(with: "Alice/"))
-        XCTAssert(ActorIdentity.random(for: Bob.self).id.starts(with: "Bob/"))
-        
-        XCTAssert(ActorIdentity.random(for: Alice.self).hasPrefix(for: Alice.self))
-        XCTAssert(ActorIdentity.random(for: Bob.self).hasPrefix(for: Bob.self))
+        XCTAssert(ActorIdentity.random(for: Person.self).hasType(for: Person.self))
     }
 }
