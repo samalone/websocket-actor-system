@@ -10,7 +10,7 @@ import NIO
 
 class RemoteNodeConnection: Identifiable, Hashable, Equatable {
     /// The ID of the remote node.
-    let id: NodeID
+    let id: NodeIdentity
     
     /// The address to connect or reconnect to the remote node.
     /// `nil` if the remote node does not have an fixed address (as with a mobile client).
@@ -20,7 +20,7 @@ class RemoteNodeConnection: Identifiable, Hashable, Equatable {
     /// if the connection has been lost.
     var channel: Channel?
     
-    init(id: NodeID, address: NodeAddress? = nil, channel: Channel? = nil) {
+    init(id: NodeIdentity, address: NodeAddress? = nil, channel: Channel? = nil) {
         self.id = id
         self.address = address
         self.channel = channel

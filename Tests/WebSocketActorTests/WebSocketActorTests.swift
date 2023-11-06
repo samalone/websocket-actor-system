@@ -46,8 +46,8 @@ distributed actor Person {
     }
 }
 
-extension NodeID {
-    static let server = NodeID(id: "server")
+extension NodeIdentity {
+    static let server = NodeIdentity(id: "server")
 }
 
 extension ActorIdentity {

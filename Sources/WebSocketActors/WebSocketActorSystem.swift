@@ -77,7 +77,7 @@ public final class WebSocketActorSystem: DistributedActorSystem,
     /// A mapping from ActorID to actor for the local actors only.
     /// Remote actors are not part of this dictionary.
     private var managedActors: [ActorID: any DistributedActor] = [:]
-    public let nodeID: NodeID
+    public let nodeID: NodeIdentity
     public let logger: Logger
 
     // === Handle replies
@@ -126,8 +126,7 @@ public final class WebSocketActorSystem: DistributedActorSystem,
         }
     }
 
-    public init(mode: WebSocketActorSystemMode, id: NodeID = .random(), logger: Logger = defaultLogger) throws {
-        assert(!id.isUnknown)
+    public init(mode: WebSocketActorSystemMode, id: NodeIdentity = .random(), logger: Logger = defaultLogger) throws {
         self.nodeID = id
         self.mode = mode
         self.logger = logger.with(mode)
@@ -151,7 +150,7 @@ public final class WebSocketActorSystem: DistributedActorSystem,
         logger.info("\(Self.self) initialized in mode: \(mode)")
     }
     
-    func associate(nodeID: NodeID, with channel: Channel) {
+    func associate(nodeID: NodeIdentity, with channel: Channel) {
         self.lock.lock()
         defer { self.lock.unlock() }
         nodeRegistry.register(id: nodeID, channel: channel)
@@ -506,8 +505,6 @@ extension WebSocketActorSystem {
     /// Return the Channel we should use to communicate with the given actor..
     /// Throws an exception if the actor is not reachable.
     func selectChannel(for actorID: ActorID) throws -> Channel {
-        let nodeID = actorID.node
-        
         switch mode {
         case .clientFor:
             // On the client, any actor without a known NodeID is assumed to be on the server.
@@ -518,7 +515,7 @@ extension WebSocketActorSystem {
         case .serverOnly:
             // On the server, we can only know where to send the message if the actor
             // has a NodeID and we have a mapping from the NodeID to the Channel.
-            guard !nodeID.isUnknown else {
+            guard let nodeID = actorID.node else {
                 logger.error("The nodeID for remote actor \(actorID) is missing.")
                 throw MissingNodeIDError()
             }
@@ -530,20 +527,6 @@ extension WebSocketActorSystem {
             }
             return channel
         }
-        
-        // We implemented a pretty naive actor system; that only handles ONE connection to a backend.
-        // In general, a websocket transport could open new connections as it notices identities to hosts.
-//        if mode.isClient && host == self.host && port == self.port {
-//            self.lock.lock()
-//            defer { self.lock.unlock() }
-//            return clientChannel!
-//        } else if mode.isServer && host != self.host && port == self.port {
-//            fatalError("Server selecting specific connections to send messages to is not implemented;" +
-//                       "This would allow the server to *initiate* request/reply exchanges, rather than only perform replies.")
-//        } else {
-//            logger.error("Not supported: \(self.mode) & \(actorID)")
-//            throw WebSocketActorUnimplementedFeatureError()
-//        }
     }
 
     private func withCallIDContinuation<Act>(recipient: Act, body: (CallID) -> Void) async throws -> Data

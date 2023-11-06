@@ -9,10 +9,9 @@ import Foundation
 import NIO
 
 public struct RemoteNodeRegistry {
-    var byNodeID: Dictionary<NodeID, RemoteNodeConnection> = [:]
+    var byNodeID: Dictionary<NodeIdentity, RemoteNodeConnection> = [:]
     
-    public mutating func register(id: NodeID, address: NodeAddress) {
-        assert(!id.isUnknown)
+    public mutating func register(id: NodeIdentity, address: NodeAddress) {
         if let rnc = byNodeID[id] {
             // We don't allow re-registration of a node at a different address,
             // so just confirm that the address has not changed.
@@ -23,8 +22,7 @@ public struct RemoteNodeRegistry {
         }
     }
     
-    public mutating func register(id: NodeID, channel: Channel) {
-        assert(!id.isUnknown)
+    public mutating func register(id: NodeIdentity, channel: Channel) {
         if let rnc = byNodeID[id] {
             rnc.channel = channel
         }
@@ -41,19 +39,17 @@ public struct RemoteNodeRegistry {
         }
     }
     
-    public func channel(for nodeID: NodeID) -> Channel? {
-        assert(!nodeID.isUnknown)
+    public func channel(for nodeID: NodeIdentity) -> Channel? {
         guard let rnc = byNodeID[nodeID] else { return nil }
         return rnc.channel
     }
     
-    public func address(for nodeID: NodeID) -> NodeAddress? {
-        assert(!nodeID.isUnknown)
+    public func address(for nodeID: NodeIdentity) -> NodeAddress? {
         guard let rnc = byNodeID[nodeID] else { return nil }
         return rnc.address
     }
     
-    public func nodeID(for channel: Channel) -> NodeID? {
+    public func nodeID(for channel: Channel) -> NodeIdentity? {
         for rnc in byNodeID.values {
             if rnc.channel === channel {
                 return rnc.id

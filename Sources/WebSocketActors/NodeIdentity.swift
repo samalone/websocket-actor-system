@@ -14,7 +14,7 @@ import Foundation
 /// It can be any string, so the `NodeID` of the server can simply be "server",
 /// but if there can be multiple clients, you should use ``random()`` to generate
 /// unique IDs for each client.
-public struct NodeID: Hashable, Sendable, Equatable {
+public struct NodeIdentity: Hashable, Sendable, Equatable {
     public let id: String
     
     public init(id: String) {
@@ -24,16 +24,9 @@ public struct NodeID: Hashable, Sendable, Equatable {
     public static func random() -> Self {
         .init(id: "\(UUID().uuidString)")
     }
-    
-    /// A special NodeID that indicates that the node of the actor is unknown.
-    public static let unknown = NodeID(id: "")
-    
-    public var isUnknown: Bool {
-        id.isEmpty
-    }
 }
 
-extension NodeID: Codable {
+extension NodeIdentity: Codable {
     public func encode(to encoder: Encoder) throws {
         try id.encode(to: encoder)
     }

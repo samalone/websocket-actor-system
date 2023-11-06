@@ -23,11 +23,11 @@ import NIO
 ///  use ``init(id:)`` or ``init(stringLiteral:)`` with a constant
 ///  string to create these.
 public struct ActorIdentity: Sendable, Encodable, CustomStringConvertible, CustomDebugStringConvertible {
-    public let node: NodeID
+    public let node: NodeIdentity?
     public let id: String
     public let type: String?
     
-    public init(id: String, type: String? = nil, node: NodeID = .unknown) {
+    public init(id: String, type: String? = nil, node: NodeIdentity? = nil) {
         self.id = id
         self.type = type
         self.node = node
@@ -40,18 +40,18 @@ public struct ActorIdentity: Sendable, Encodable, CustomStringConvertible, Custo
     }
     
     /// Create a random ActorIdentity
-    public static func random(type: String? = nil, node: NodeID = .unknown) -> Self {
+    public static func random(type: String? = nil, node: NodeIdentity? = nil) -> Self {
         .init(id: "\(UUID().uuidString)", type: type, node: node)
     }
     
     /// Create a random ActorIdentity with a prefix based on the provided type.
-    public static func random<Act>(for actorType: Act.Type, node: NodeID = .unknown) -> Self
+    public static func random<Act>(for actorType: Act.Type, node: NodeIdentity? = nil) -> Self
     where Act: DistributedActor, Act.ID == ActorIdentity
     {
         .random(type: "\(Act.self)", node: node)
     }
     
-    internal func with(_ nodeID: NodeID) -> ActorIdentity {
+    internal func with(_ nodeID: NodeIdentity) -> ActorIdentity {
         ActorIdentity(id: id, type: type, node: nodeID)
     }
     
@@ -76,7 +76,7 @@ extension ActorIdentity: ExpressibleByStringLiteral {
     public init(stringLiteral value: String) {
         self.id = value
         self.type = nil
-        self.node = .unknown
+        self.node = nil
     }
 }
 
@@ -94,21 +94,21 @@ extension ActorIdentity: Decodable {
     public init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         self.id = try values.decode(String.self, forKey: .id)
-        self.node = try values.decode(NodeID.self, forKey: .node)
+        self.node = try values.decodeIfPresent(NodeIdentity.self, forKey: .node)
         self.type = try values.decodeIfPresent(String.self, forKey: .type)
         
         // When decoding, if we see a NodeID that does not match the local WebSocketActorSystem,
         // tell the system to associate that node with the current Channel we are decoding.
         // This allows us to send messages to the remote actor later.
         if let system = decoder.userInfo[.actorSystemKey] as? WebSocketActorSystem,
-           node != system.nodeID {
+           let nodeID = self.node,
+           nodeID != system.nodeID {
             
             guard let channel = decoder.userInfo[.channelKey] as? Channel else {
-                fatalError("Unable to associate NodeID \(node.id) with Channel, because .channelKey was not set on the Decoder.userInfo")
+                fatalError("Unable to associate NodeID \(nodeID) with Channel, because .channelKey was not set on the Decoder.userInfo")
             }
             
-            system.associate(nodeID: node, with: channel)
+            system.associate(nodeID: nodeID, with: channel)
         }
-           
     }
 }
