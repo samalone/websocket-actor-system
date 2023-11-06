@@ -38,7 +38,7 @@ public struct MissingNodeIDError: DistributedActorSystemError {}
 public struct NoChannelToNodeError: DistributedActorSystemError {}
 
 public enum WebSocketActorSystemMode {
-    case clientFor(host: String, port: Int)
+    case clientFor(server: NodeAddress)
     case serverOnly(host: String, port: Int)
 
     var isClient: Bool {
@@ -87,8 +87,7 @@ public final class WebSocketActorSystem: DistributedActorSystem,
 
     // ==== Channels
     let group: EventLoopGroup
-    private var serverChannel: Channel?
-    private var clientChannel: Channel?
+    private var channel: Channel?
     private var nodeRegistry = RemoteNodeRegistry()
 
     // === On-Demand resolve handler
@@ -99,31 +98,9 @@ public final class WebSocketActorSystem: DistributedActorSystem,
     // === Configuration
     public let mode: WebSocketActorSystemMode
     
-    /// For a client, the host we are connected to.
-    /// For a server, the interface address we are listening on.
-//    @available(*, deprecated, message: "Should not be used to differentiate clients & servers")
-    public var host: String {
-        switch mode {
-        case .clientFor(let host, _):
-            return host
-        case .serverOnly(let host, _):
-            return host
-        }
-    }
-    
-    /// For a client, the port we are connected to.
-    /// For a server, the port we are listening on.
-//    @available(*, deprecated, message: "Should not be used to differentiate clients & servers")
-    public var port: Int {
-        switch mode {
-        case .clientFor(_, let port):
-            return port
-        case .serverOnly(_, let port):
-            if let localPort = serverChannel?.localAddress?.port {
-                return localPort
-            }
-            return port
-        }
+    /// The local port number, or -1 if there is no channel open
+    public var localPort: Int {
+        channel?.localAddress?.port ?? -1
     }
 
     public init(mode: WebSocketActorSystemMode, id: NodeIdentity = .random(), logger: Logger = defaultLogger) throws {
@@ -134,17 +111,17 @@ public final class WebSocketActorSystem: DistributedActorSystem,
         // We prefer NIOTSEventLoopGroup where it is available.
         // Start networking
         switch mode {
-        case .clientFor(let host, let port):
+        case .clientFor(let serverAddress):
 #if canImport(Network)
             self.group = NIOTSEventLoopGroup()
 #else
             self.group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
 #endif
-            self.clientChannel = try startClient(host: host, port: port)
+            self.channel = try startClient(host: serverAddress.host, port: serverAddress.port)
         case .serverOnly(let host, let port):
             self.group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
-            self.serverChannel = try startServer(host: host, port: port)
-            logger.info("server listening on port \(serverChannel?.localAddress?.port ?? -1)")
+            self.channel = try startServer(host: host, port: port)
+            logger.info("server listening on port \(localPort)")
         }
 
         logger.info("\(Self.self) initialized in mode: \(mode)")
@@ -510,7 +487,7 @@ extension WebSocketActorSystem {
             // On the client, any actor without a known NodeID is assumed to be on the server.
             self.lock.lock()
             defer { self.lock.unlock() }
-            return clientChannel!
+            return channel!
             
         case .serverOnly:
             // On the server, we can only know where to send the message if the actor

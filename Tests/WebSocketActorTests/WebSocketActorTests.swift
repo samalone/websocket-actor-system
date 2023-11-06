@@ -115,7 +115,7 @@ final class WebsocketActorSystemTests: XCTestCase {
     }
     
     func testRemoteCalls() async throws {
-        let client = try WebSocketActorSystem(mode: .clientFor(host: "localhost", port: server.port),
+        let client = try WebSocketActorSystem(mode: .clientFor(server: NodeAddress(scheme: "ws", host: "localhost", port: server.localPort)),
                                           logger: Logger(label: "\(name) client").with(level: .trace))
         
         // Create the real Alice on the server
@@ -140,7 +140,7 @@ final class WebsocketActorSystemTests: XCTestCase {
     }
     
     func testServerPush() async throws {
-        let client = try WebSocketActorSystem(mode: .clientFor(host: "localhost", port: server.port),
+        let client = try WebSocketActorSystem(mode: .clientFor(server: NodeAddress(scheme: "ws", host: "localhost", port: server.localPort)),
                                           logger: Logger(label: "\(name) client").with(level: .trace))
         
         // Create the real Alice on the server
