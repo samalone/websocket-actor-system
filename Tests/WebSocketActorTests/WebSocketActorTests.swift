@@ -1,6 +1,7 @@
 import XCTest
 import Distributed
 import Logging
+import NIO
 @testable import WebSocketActors
 
 typealias DefaultDistributedActorSystem = WebSocketActorSystem
@@ -46,6 +47,10 @@ distributed actor Person {
     }
 }
 
+extension NodeIdentity {
+    static let server = NodeIdentity(id: "server")
+}
+
 extension ActorIdentity {
     static let alice = ActorIdentity(id: "alice")
     static let bob = ActorIdentity(id: "bob")
@@ -79,6 +84,7 @@ final class WebsocketActorSystemTests: XCTestCase {
     
     override func setUp() async throws {
         server = try WebSocketActorSystem(mode: .serverOnly(host: "localhost", port: 0),
+                                          id: .server,
                                           logger: Logger(label: "\(name) server").with(level: .trace))
     }
     
@@ -110,7 +116,7 @@ final class WebsocketActorSystemTests: XCTestCase {
     }
     
     func testRemoteCalls() async throws {
-        let client = try WebSocketActorSystem(mode: .clientFor(host: "localhost", port: server.port),
+        let client = try WebSocketActorSystem(mode: .clientFor(server: NodeAddress(scheme: "ws", host: "localhost", port: server.localPort)),
                                           logger: Logger(label: "\(name) client").with(level: .trace))
         
         // Create the real Alice on the server
@@ -135,7 +141,7 @@ final class WebsocketActorSystemTests: XCTestCase {
     }
     
     func testServerPush() async throws {
-        let client = try WebSocketActorSystem(mode: .clientFor(host: "localhost", port: server.port),
+        let client = try WebSocketActorSystem(mode: .clientFor(server: NodeAddress(scheme: "ws", host: "localhost", port: server.localPort)),
                                           logger: Logger(label: "\(name) client").with(level: .trace))
         
         // Create the real Alice on the server
@@ -153,6 +159,39 @@ final class WebsocketActorSystemTests: XCTestCase {
         try await clientAlice.move(near: clientBob)
         
         let greeting = try await serverAlice.introduceYourself()
-        XCTAssertEqual(greeting, "Nice to meet you, Bob.")
+        XCTAssertEqual(greeting, "Nice to meet you, Alice.")
+    }
+    
+    func testResilientChannel() async throws {
+        let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
+        let resilient = ResilientChannel(group: group) {
+            let bootstrap = ClientBootstrap(group: group)
+            let channel = try await bootstrap.connect(host: "0.0.0.0", port: 30124).get()
+            return channel
+        }
+        let channel = try await resilient.channel
+    }
+    
+    func testBackoff() {
+        class T: ExpressibleByStringLiteral {
+            
+            let name: String
+            var iterator = ExponentialBackoff.standard.makeIterator()
+            var sum = 0.0
+            
+            required init(stringLiteral value: String) {
+                name = value
+            }
+            
+            func step() {
+                sum += iterator.next()!
+            }
+        }
+        var runs: [T] = ["A", "B", "C", "D", "E"]
+        print(runs.map { $0.name}, separator: ",")
+        for _ in 1..<10 {
+            runs.forEach { $0.step() }
+            print(runs.map { $0.sum}, separator: ",")
+        }
     }
 }
