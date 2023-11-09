@@ -99,7 +99,7 @@ public final class WebSocketActorSystem: DistributedActorSystem,
         channel?.localAddress?.port ?? -1
     }
 
-    public init(mode: WebSocketActorSystemMode, id: NodeIdentity = .random(), logger: Logger = defaultLogger) throws {
+    public init(mode: WebSocketActorSystemMode, id: NodeIdentity = .random(), logger: Logger = defaultLogger) async throws {
         self.nodeID = id
         self.mode = mode
         self.logger = logger.with(mode)
@@ -112,7 +112,7 @@ public final class WebSocketActorSystem: DistributedActorSystem,
 #else
             self.group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
 #endif
-            self.channel = try startClient(host: serverAddress.host, port: serverAddress.port)
+            self.channel = try await startClient(host: serverAddress.host, port: serverAddress.port)
         case .serverOnly(let host, let port):
             self.group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
             self.channel = try startServer(host: host, port: port)
@@ -592,4 +592,6 @@ public enum WebSocketActorSystemError: Error, DistributedActorSystemError {
     /// Future versions of this library may attempt to reconnect to the remote node
     /// instead of throwing this error.
     case noChannelToNode(id: NodeIdentity)
+    
+    case failedToUpgrade
 }

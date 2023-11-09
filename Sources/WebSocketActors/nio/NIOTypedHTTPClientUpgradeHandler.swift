@@ -17,7 +17,6 @@ import NIOHTTP1
 /// An object that implements `NIOTypedHTTPClientProtocolUpgrader` knows how to handle HTTP upgrade to
 /// a protocol on a client-side channel.
 /// It has the option of denying this upgrade based upon the server response.
-@_spi(AsyncChannel)
 public protocol NIOTypedHTTPClientProtocolUpgrader<UpgradeResult> {
     associatedtype UpgradeResult: Sendable
 
@@ -43,7 +42,6 @@ public protocol NIOTypedHTTPClientProtocolUpgrader<UpgradeResult> {
 
 /// The upgrade configuration for the ``NIOTypedHTTPClientUpgradeHandler``.
 @available(macOS 13, iOS 16, tvOS 16, watchOS 9, *)
-@_spi(AsyncChannel)
 public struct NIOTypedHTTPClientUpgradeConfiguration<UpgradeResult: Sendable> {
     /// The initial request head that is sent out once the channel becomes active.
     public var upgradeRequestHead: HTTPRequestHead
@@ -77,7 +75,6 @@ public struct NIOTypedHTTPClientUpgradeConfiguration<UpgradeResult: Sendable> {
 /// It will only upgrade to the protocol that is returned first in the list and does not currently
 /// have the capability to upgrade to multiple simultaneous layered protocols.
 @available(macOS 13, iOS 16, tvOS 16, watchOS 9, *)
-@_spi(AsyncChannel)
 public final class NIOTypedHTTPClientUpgradeHandler<UpgradeResult: Sendable>: ChannelDuplexHandler, RemovableChannelHandler {
     public typealias OutboundIn = HTTPClientRequestPart
     public typealias OutboundOut = HTTPClientRequestPart

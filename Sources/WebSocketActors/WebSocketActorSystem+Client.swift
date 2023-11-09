@@ -25,43 +25,60 @@ import NIOFoundationCompat
 
 @available(iOS 16.0, *)
 extension WebSocketActorSystem {
-    func startClient(host: String, port: Int) throws -> Channel {
-        let upgradeSemaphore = DispatchSemaphore(value: 0)
+    
+    enum UpgradeResult {
+        case websocket(Channel)
+        case notUpgraded
+    }
+    
+    func startClient(host: String, port: Int) async throws -> Channel {
         let bootstrap = PlatformBootstrap(group: group)
-            // Enable SO_REUSEADDR.
-                .channelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
-                .channelInitializer { channel in
-
-                    let httpHandler = HTTPInitialRequestHandler(target: .init(host: host, port: port))
-
-                    let websocketUpgrader = NIOWebSocketClientUpgrader(
-                        requestKey: "OfS0wDaT5NoxF2gqm7Zj2YtetzM=",
-                        upgradePipelineHandler: { (channel: Channel, _: HTTPResponseHead) in
-                            defer {
-                                upgradeSemaphore.signal()
-                            }
-                            return channel.pipeline.addHandlers(
-                                WebSocketMessageOutboundHandler(actorSystem: self),
-                                WebSocketActorMessageInboundHandler(actorSystem: self)
-                                // WebSocketActorReplyHandler(actorSystem: self)
-                            )
-                        })
-
-                    let config: NIOHTTPClientUpgradeConfiguration = (
-                        upgraders: [websocketUpgrader],
-                        completionHandler: { _ in
-                            channel.pipeline.removeHandler(httpHandler, promise: nil)
-                        })
-
-                    return channel.pipeline.addHTTPClientHandlers(withClientUpgrade: config).flatMap {
-                        channel.pipeline.addHandler(httpHandler)
+        let upgradeResult = try await bootstrap.connect(host: host, port: port) { channel in
+            channel.eventLoop.makeCompletedFuture {
+                let upgrader = NIOTypedWebSocketClientUpgrader<UpgradeResult> { channel, responseHead in
+                    channel.pipeline.addHandlers(
+                        WebSocketMessageOutboundHandler(actorSystem: self),
+                        WebSocketActorMessageInboundHandler(actorSystem: self)
+                        // WebSocketActorReplyHandler(actorSystem: self)
+                    ).map {
+                        UpgradeResult.websocket(channel)
                     }
                 }
-
-        let channel = try bootstrap.connect(host: host, port: port).wait()
+                
+                var headers = HTTPHeaders()
+                headers.add(name: "Content-Type", value: "text/plain; charset=utf-8")
+                headers.add(name: "Content-Length", value: "0")
+                
+                let requestHead = HTTPRequestHead(
+                    version: .http1_1,
+                    method: .GET,
+                    uri: "/",
+                    headers: headers
+                )
+                
+                let clientUpgradeConfiguration = NIOTypedHTTPClientUpgradeConfiguration(
+                    upgradeRequestHead: requestHead,
+                    upgraders: [upgrader],
+                    notUpgradingCompletionHandler: { channel in
+                        channel.eventLoop.makeCompletedFuture {
+                            return UpgradeResult.notUpgraded
+                        }
+                    }
+                )
+                
+                let negotiationResultFuture = try channel.pipeline.syncOperations.configureUpgradableHTTPClientPipeline(
+                    configuration: .init(upgradeConfiguration: clientUpgradeConfiguration)
+                )
+                
+                return negotiationResultFuture
+            }
+        }
         
-        upgradeSemaphore.wait()
-
-        return channel
+        switch try await upgradeResult.get() {
+        case .websocket(let channel):
+            return channel
+        case .notUpgraded:
+            throw WebSocketActorSystemError.failedToUpgrade
+        }
     }
 }
