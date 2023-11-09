@@ -1,4 +1,4 @@
-# WebSocketActorSystem
+# WebSocketActors
 
 [![macOS tests](https://github.com/samalone/websocket-actor-system/actions/workflows/test-macos.yml/badge.svg)](https://github.com/samalone/websocket-actor-system/actions/workflows/test-macos.yml) [![Ubuntu tests](https://github.com/samalone/websocket-actor-system/actions/workflows/test-ubuntu.yml/badge.svg)](https://github.com/samalone/websocket-actor-system/actions/workflows/test-ubuntu.yml)
 
@@ -10,6 +10,53 @@ WebSockets. It is based on Apple's
 sample code.
 
 - [API documentation](https://samalone.github.io/websocket-actor-system/documentation/websocketactors/)
+
+## Installation
+
+Add the package `https://github.com/samalone/websocket-actor-system` to your Xcode project, or add:
+
+```swift
+   .package(url: "https://github.com/samalone/websocket-actor-system.git", branch: "main"),
+```
+
+to your package dependencies in your `Package.swift` file. Then add:
+
+```swift
+   .product(name: "WebSocketActors", package: "websocket-actor-system"),
+```
+
+to the target dependencies of your package target.
+
+## Getting started
+
+To use the `WebSocketActorSystem` you will need to create both a server and a client.
+
+### Server
+
+```swift
+@main
+struct Server {
+    static func main() {
+        let system = try! WebSocketActorSystem(mode: .serverOnly(host: "localhost", port: 8888))
+        
+        system.registerOnDemandResolveHandler { id in
+            // We create new BotPlayers "ad-hoc" as they are requested for.
+            // Subsequent resolves are able to resolve the same instance.
+            if system.isBotID(id) {
+                return system.makeActorWithID(id) {
+                    Counter(actorSystem: system)
+                }
+            }
+            
+            return nil // don't resolve on-demand
+        }
+        
+        Thread.sleep(forTimeInterval: 100_000)
+    }
+}
+```
+
+Once created, the server runs automatically in the background. Perform other actions or sleep the main thread to prevent the server from exiting.
 
 ## Target use case
 
