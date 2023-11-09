@@ -8,7 +8,6 @@ Invocation encoder into a NIO byte buffer.
 import Distributed
 import Foundation
 
-@available(iOS 16.0, *)
 public class NIOInvocationEncoder: DistributedTargetInvocationEncoder {
     public typealias SerializationRequirement = any Codable
     var genericSubs: [String] = []

@@ -19,9 +19,6 @@ import NIOWebSocket
 
 let magicWebSocketGUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 
-@available(*, deprecated, renamed: "NIOWebSocketClientUpgrader")
-public typealias NIOWebClientSocketUpgrader = NIOWebSocketClientUpgrader
-
 /// A `HTTPClientProtocolUpgrader` that knows how to do the WebSocket upgrade dance.
 ///
 /// This upgrader assumes that the `HTTPClientUpgradeHandler` will create and send the upgrade request. 
@@ -82,7 +79,6 @@ public final class NIOWebSocketClientUpgrader: NIOHTTPClientProtocolUpgrader {
 /// This upgrader assumes that the `HTTPClientUpgradeHandler` will create and send the upgrade request.
 /// This upgrader also assumes that the `HTTPClientUpgradeHandler` will appropriately mutate the
 /// pipeline to remove the HTTP `ChannelHandler`s.
-@available(macOS 13, iOS 16, tvOS 16, watchOS 9, *)
 public final class NIOTypedWebSocketClientUpgrader<UpgradeResult: Sendable>: NIOTypedHTTPClientProtocolUpgrader {
     /// RFC 6455 specs this as the required entry in the Upgrade header.
     public let supportedProtocol: String = "websocket"

@@ -17,7 +17,6 @@ import NIOCore
 import NIOHTTP1
 import NIOWebSocket
 
-@available(macOS 13, iOS 16, tvOS 16, watchOS 9, *)
 struct NIOTypedHTTPClientUpgraderStateMachine<UpgradeResult> {
     @usableFromInline
     enum State {

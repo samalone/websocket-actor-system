@@ -17,14 +17,12 @@ import Logging
     import NIOPosix
 #endif
 
-@available(iOS 16.0, *)
 internal enum WebSocketWireEnvelope: Sendable, Codable {
     case call(RemoteWebSocketCallEnvelope)
     case reply(WebSocketReplyEnvelope)
     case connectionClose
 }
 
-@available(iOS 16.0, *)
 internal struct RemoteWebSocketCallEnvelope: Sendable, Codable {
     let callID: WebSocketActorSystem.CallID
     let recipient: ActorIdentity
@@ -56,7 +54,6 @@ public enum WebSocketActorSystemMode {
     }
 }
 
-@available(iOS 16.0, *)
 public final class WebSocketActorSystem: DistributedActorSystem,
     @unchecked /* state protected with locks */ Sendable {
 
@@ -317,7 +314,6 @@ extension WebSocketActorSystem {
     }
 }
 
-@available(iOS 16.0, *)
 extension WebSocketActorSystem {
     func decodeAndDeliver(data: inout ByteBuffer, from address: SocketAddress?,
                           on channel: Channel) {
@@ -404,7 +400,6 @@ extension WebSocketActorSystem {
 // ==== ----------------------------------------------------------------------------------------------------------------
 // - MARK: RemoteCall implementations
 
-@available(iOS 16.0, *)
 extension WebSocketActorSystem {
     public func remoteCall<Act, Err, Res>(
         on actor: Act,
@@ -520,7 +515,6 @@ extension WebSocketActorSystem {
     }
 }
 
-@available(iOS 16.0, *)
 public struct WebSocketActorSystemResultHandler: DistributedTargetInvocationResultHandler {
     public typealias SerializationRequirement = any Codable
 
@@ -557,7 +551,6 @@ public struct WebSocketActorSystemResultHandler: DistributedTargetInvocationResu
 // ==== ----------------------------------------------------------------------------------------------------------------
 // - MARK: Reply handling
 
-@available(iOS 16.0, *)
 extension WebSocketActorSystem {
     func sendReply(_ envelope: WebSocketReplyEnvelope, on channel: Channel) throws {
         lock.lock()

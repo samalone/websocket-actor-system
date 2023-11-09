@@ -41,7 +41,6 @@ public protocol NIOTypedHTTPClientProtocolUpgrader<UpgradeResult> {
 }
 
 /// The upgrade configuration for the ``NIOTypedHTTPClientUpgradeHandler``.
-@available(macOS 13, iOS 16, tvOS 16, watchOS 9, *)
 public struct NIOTypedHTTPClientUpgradeConfiguration<UpgradeResult: Sendable> {
     /// The initial request head that is sent out once the channel becomes active.
     public var upgradeRequestHead: HTTPRequestHead
@@ -74,7 +73,6 @@ public struct NIOTypedHTTPClientUpgradeConfiguration<UpgradeResult: Sendable> {
 /// The request sends an order of preference to request which protocol it would like to use for the upgrade.
 /// It will only upgrade to the protocol that is returned first in the list and does not currently
 /// have the capability to upgrade to multiple simultaneous layered protocols.
-@available(macOS 13, iOS 16, tvOS 16, watchOS 9, *)
 public final class NIOTypedHTTPClientUpgradeHandler<UpgradeResult: Sendable>: ChannelDuplexHandler, RemovableChannelHandler {
     public typealias OutboundIn = HTTPClientRequestPart
     public typealias OutboundOut = HTTPClientRequestPart

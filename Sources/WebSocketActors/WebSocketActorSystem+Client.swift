@@ -23,7 +23,6 @@ import NIOFoundationCompat
 // ==== ----------------------------------------------------------------------------------------------------------------
 // - MARK: Client-side networking stack
 
-@available(iOS 16.0, *)
 extension WebSocketActorSystem {
     
     enum UpgradeResult {

@@ -16,7 +16,7 @@ import NIOPosix
 import NIOHTTP1
 import NIOWebSocket
 
-@available(macOS 14, *)
+/*
 @main
 struct Client {
     /// The host to connect to.
@@ -132,3 +132,4 @@ struct Client {
         }
     }
 }
+*/

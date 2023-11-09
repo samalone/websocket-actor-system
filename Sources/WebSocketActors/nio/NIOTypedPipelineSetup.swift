@@ -11,7 +11,6 @@ import NIOHTTP1
 
 // MARK: - Client pipeline configuration
 /// Configuration for an upgradable HTTP pipeline.
-@available(macOS 13, iOS 16, tvOS 16, watchOS 9, *)
 public struct NIOUpgradableHTTPClientPipelineConfiguration<UpgradeResult: Sendable> {
     /// The strategy to use when dealing with leftover bytes after removing the ``HTTPDecoder`` from the pipeline.
     public var leftOverBytesStrategy = RemoveAfterUpgradeStrategy.dropBytes
@@ -44,14 +43,12 @@ extension ChannelPipeline {
     ///   - configuration: The HTTP pipeline's configuration.
     /// - Returns: An `EventLoopFuture` that will fire when the pipeline is configured. The future contains an `EventLoopFuture`
     /// that is fired once the pipeline has been upgraded or not and contains the `UpgradeResult`.
-    @available(macOS 13, iOS 16, tvOS 16, watchOS 9, *)
     public func configureUpgradableHTTPClientPipeline<UpgradeResult: Sendable>(
         configuration: NIOUpgradableHTTPClientPipelineConfiguration<UpgradeResult>
     ) -> EventLoopFuture<EventLoopFuture<UpgradeResult>> {
         self._configureUpgradableHTTPClientPipeline(configuration: configuration)
     }
 
-    @available(macOS 13, iOS 16, tvOS 16, watchOS 9, *)
     private func _configureUpgradableHTTPClientPipeline<UpgradeResult: Sendable>(
         configuration: NIOUpgradableHTTPClientPipelineConfiguration<UpgradeResult>
     ) -> EventLoopFuture<EventLoopFuture<UpgradeResult>> {
@@ -82,7 +79,6 @@ extension ChannelPipeline.SynchronousOperations {
     /// - Parameters:
     ///   - configuration: The HTTP pipeline's configuration.
     /// - Returns: An `EventLoopFuture` that is fired once the pipeline has been upgraded or not and contains the `UpgradeResult`.
-    @available(macOS 13, iOS 16, tvOS 16, watchOS 9, *)
     public func configureUpgradableHTTPClientPipeline<UpgradeResult: Sendable>(
         configuration: NIOUpgradableHTTPClientPipelineConfiguration<UpgradeResult>
     ) throws -> EventLoopFuture<UpgradeResult> {
