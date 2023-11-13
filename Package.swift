@@ -6,7 +6,7 @@ import PackageDescription
 let package = Package(
     name: "WebSocketActors",
     platforms: [
-        .macOS(.v14),
+        .macOS(.v13),
         .iOS(.v16),
         .watchOS(.v10),
         .tvOS(.v17)

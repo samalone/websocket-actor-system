@@ -147,10 +147,21 @@ public final class WebSocketActorSystem: DistributedActorSystem,
         // consumed by iterating the group or by exiting the group. Since, we are never consuming
         // the results of the group we need the group to automatically discard them; otherwise, this
         // would result in a memory leak over time.
-        try await withThrowingDiscardingTaskGroup { group in
-            for try await upgradeResult in channel.inbound {
-                group.addTask {
-                    await self.handleUpgradeResult(upgradeResult)
+        if #available(macOS 14.0, *) {
+            try await withThrowingDiscardingTaskGroup { group in
+                for try await upgradeResult in channel.inbound {
+                    group.addTask {
+                        await self.handleUpgradeResult(upgradeResult)
+                    }
+                }
+            }
+        } else {
+            // Fallback on earlier versions
+            try await withThrowingTaskGroup(of: Void.self) { group in
+                for try await upgradeResult in channel.inbound {
+                    group.addTask {
+                        await self.handleUpgradeResult(upgradeResult)
+                    }
                 }
             }
         }

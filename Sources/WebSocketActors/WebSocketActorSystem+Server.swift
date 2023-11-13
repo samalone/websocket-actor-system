@@ -39,8 +39,6 @@ let websocketResponse = """
 </html>
 """
 
-
-@available(macOS 14, *)
 extension WebSocketActorSystem {
     private static let responseBody = ByteBuffer(string: websocketResponse)
     
