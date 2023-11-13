@@ -37,19 +37,6 @@ extension WebSocketActorSystem {
         let upgradeResult = try await bootstrap.connect(host: host, port: port) { channel in
             channel.eventLoop.makeCompletedFuture {
                 let upgrader = NIOTypedWebSocketClientUpgrader<UpgradeResult> { channel, responseHead in
-//                    do {
-//                        try channel.pipeline.addHandlers(
-//                            WebSocketMessageOutboundHandler(actorSystem: self),
-//                            WebSocketActorMessageInboundHandler(actorSystem: self)
-//                            // WebSocketActorReplyHandler(actorSystem: self)
-//                        ).wait()
-//                    }
-//                    catch {
-//                        return channel.eventLoop.makeCompletedFuture {
-//                            UpgradeResult.notUpgraded
-//                        }
-//                    }
-                    
                     return channel.eventLoop.makeCompletedFuture {
                         let asyncChannel = try NIOAsyncChannel<WebSocketFrame, WebSocketFrame>(synchronouslyWrapping: channel)
                         return UpgradeResult.websocket(asyncChannel)

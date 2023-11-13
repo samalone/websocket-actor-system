@@ -13,6 +13,10 @@ import NIOWebSocket
 /// An `ActorIdentity` is a string that uniquely identifies a distributed object
 /// across all of the clients and servers in a ``WebSocketActorSystem``.
 ///
+/// Only the `id` field is used to determine equality of two actor identities.
+/// The `node` and `type` fields are used to store optional additional information
+/// about the actor.
+///
 ///  A UUID is a common way of generating a unique `ActorIdentity`,
 ///  and the ``random()`` function will create that. Alternatively, you can
 ///  use the ``random(for:)`` function to generate a UUID that is prefixed

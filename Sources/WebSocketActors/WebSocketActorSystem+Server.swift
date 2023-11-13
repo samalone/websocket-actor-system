@@ -89,64 +89,7 @@ extension WebSocketActorSystem {
                 }
             }
         
-        // We are handling each incoming connection in a separate child task. It is important
-        // to use a discarding task group here which automatically discards finished child tasks.
-        // A normal task group retains all child tasks and their outputs in memory until they are
-        // consumed by iterating the group or by exiting the group. Since, we are never consuming
-        // the results of the group we need the group to automatically discard them; otherwise, this
-        // would result in a memory leak over time.
-//        try await withThrowingDiscardingTaskGroup { group in
-//            for try await upgradeResult in channel.inbound {
-//                group.addTask {
-//                    await self.handleUpgradeResult(upgradeResult)
-//                }
-//            }
-//        }
-        
-        // Upgrader performs upgrade from HTTP to WS connection
-//        let upgrader = NIOWebSocketServerUpgrader(
-//            shouldUpgrade: { (channel: Channel, head: HTTPRequestHead) in
-//                // Always upgrade; this is where we could do some auth checks
-//                channel.eventLoop.makeSucceededFuture(HTTPHeaders())
-//            },
-//            upgradePipelineHandler: { (channel: Channel, _: HTTPRequestHead) in
-//                channel.pipeline.addHandlers(
-//                    WebSocketMessageOutboundHandler(actorSystem: self),
-//                    WebSocketActorMessageInboundHandler(actorSystem: self)
-//                )
-//            }
-//        )
-        
         return channel
-        
-//        let bootstrap = ServerBootstrap(group: group)
-//        // Specify backlog and enable SO_REUSEADDR for the server itself
-//            .serverChannelOption(ChannelOptions.backlog, value: 256)
-//            .serverChannelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
-//        
-//        // Enable SO_REUSEADDR for the accepted Channels
-//            .childChannelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
-//        
-//        let channel = try await bootstrap.bind(host: host, port: port) { channel in
-//            let httpHandler = HTTPHandler(logger: self.logger)
-//            let config: NIOHTTPServerUpgradeConfiguration = (
-//                upgraders: [upgrader],
-//                completionHandler: { _ in
-//                    channel.pipeline.removeHandler(httpHandler, promise: nil)
-//                }
-//            )
-//            return channel.pipeline.configureHTTPServerPipeline(withServerUpgrade: config).flatMap {
-//                channel.pipeline.addHandler(httpHandler)
-//            }.map {
-//                return channel
-//            }
-//        }
-//        
-//        guard channel.channel.localAddress != nil else {
-//            fatalError("Address was unable to bind. Please check that the socket was not closed or that the address family was understood.")
-//        }
-//        
-//        return channel
     }
     
     /// This method handles a single connection by echoing back all inbound data.
@@ -176,85 +119,7 @@ extension WebSocketActorSystem {
         try await withThrowingTaskGroup(of: Void.self) { group in
             group.addTask {
                 try await self.dispatchIncomingFrames(channel: channel)
-                
-//                for try await frame in channel.inbound {
-//                    switch frame.opcode {
-//                    case .connectionClose:
-//                        // Close the connection.
-//                        //
-//                        // We might also want to inform the actor system that this connection
-//                        // went away, so it can terminate any tasks or actors working to
-//                        // inform the remote receptionist on the now-gone system about our
-//                        // actors.
-//                        return
-//                    case .text:
-//                        var data = frame.unmaskedData
-//                        let text = data.getString(at: 0, length: data.readableBytes) ?? ""
-//                        self.logger.withOp().trace("Received: \(text), from: \(String(describing: channel.channel.remoteAddress))")
-//                        
-//                        await self.decodeAndDeliver(data: &data, from: channel.channel.remoteAddress,
-//                                               on: channel)
-//                        
-//                    case .binary, .continuation, .pong, .ping:
-//                        // We ignore these frames.
-//                        break
-//                    default:
-//                        // Unknown frames are errors.
-//                        await self.closeOnError(channel: channel)
-//                    }
-//                }
-//                
-//                for try await frame in channel.inbound {
-//                    switch frame.opcode {
-//                    case .ping:
-//                        print("Received ping")
-//                        var frameData = frame.data
-//                        let maskingKey = frame.maskKey
-//
-//                        if let maskingKey = maskingKey {
-//                            frameData.webSocketUnmask(maskingKey)
-//                        }
-//
-//                        let responseFrame = WebSocketFrame(fin: true, opcode: .pong, data: frameData)
-//                        try await channel.outbound.write(responseFrame)
-//
-//                    case .connectionClose:
-//                        // This is an unsolicited close. We're going to send a response frame and
-//                        // then, when we've sent it, close up shop. We should send back the close code the remote
-//                        // peer sent us, unless they didn't send one at all.
-//                        print("Received close")
-//                        var data = frame.unmaskedData
-//                        let closeDataCode = data.readSlice(length: 2) ?? ByteBuffer()
-//                        let closeFrame = WebSocketFrame(fin: true, opcode: .connectionClose, data: closeDataCode)
-//                        try await channel.outbound.write(closeFrame)
-//                        return
-//                    case .binary, .continuation, .pong:
-//                        // We ignore these frames.
-//                        break
-//                    default:
-//                        // Unknown frames are errors.
-//                        return
-//                    }
-//                }
             }
-
-//            group.addTask {
-//                // This is our main business logic where we are just sending the current time
-//                // every second.
-//                while true {
-//                    // We can't really check for error here, but it's also not the purpose of the
-//                    // example so let's not worry about it.
-//                    let theTime = ContinuousClock().now
-//                    var buffer = channel.channel.allocator.buffer(capacity: 12)
-//                    buffer.writeString("\(theTime)")
-//
-//                    let frame = WebSocketFrame(fin: true, opcode: .text, data: buffer)
-//
-//                    print("Sending time")
-//                    try await channel.outbound.write(frame)
-//                    try await Task.sleep(for: .seconds(1))
-//                }
-//            }
 
             try await group.next()
             group.cancelAll()

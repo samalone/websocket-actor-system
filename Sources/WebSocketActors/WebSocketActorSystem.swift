@@ -24,6 +24,12 @@ internal enum WebSocketWireEnvelope: Sendable, Codable {
     case connectionClose
 }
 
+internal struct WebSocketReplyEnvelope: Sendable, Codable {
+    let callID: WebSocketActorSystem.CallID
+    let sender: WebSocketActorSystem.ActorID?
+    let value: Data
+}
+
 internal struct RemoteWebSocketCallEnvelope: Sendable, Codable {
     let callID: WebSocketActorSystem.CallID
     let recipient: ActorIdentity
