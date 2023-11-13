@@ -20,27 +20,39 @@ import NIOFoundationCompat
     typealias PlatformBootstrap = ClientBootstrap
 #endif
 
+typealias WebSocketAgentChannel = NIOAsyncChannel<WebSocketWireEnvelope, WebSocketWireEnvelope>
+
 // ==== ----------------------------------------------------------------------------------------------------------------
 // - MARK: Client-side networking stack
 
 extension WebSocketActorSystem {
     
     enum UpgradeResult {
-        case websocket(Channel)
+        case websocket(NIOAsyncChannel<WebSocketFrame, WebSocketFrame>)
         case notUpgraded
     }
     
-    func startClient(host: String, port: Int) async throws -> Channel {
+    func startClient(host: String, port: Int) async throws -> NIOAsyncChannel<WebSocketFrame, WebSocketFrame> {
         let bootstrap = PlatformBootstrap(group: group)
         let upgradeResult = try await bootstrap.connect(host: host, port: port) { channel in
             channel.eventLoop.makeCompletedFuture {
                 let upgrader = NIOTypedWebSocketClientUpgrader<UpgradeResult> { channel, responseHead in
-                    channel.pipeline.addHandlers(
-                        WebSocketMessageOutboundHandler(actorSystem: self),
-                        WebSocketActorMessageInboundHandler(actorSystem: self)
-                        // WebSocketActorReplyHandler(actorSystem: self)
-                    ).map {
-                        UpgradeResult.websocket(channel)
+//                    do {
+//                        try channel.pipeline.addHandlers(
+//                            WebSocketMessageOutboundHandler(actorSystem: self),
+//                            WebSocketActorMessageInboundHandler(actorSystem: self)
+//                            // WebSocketActorReplyHandler(actorSystem: self)
+//                        ).wait()
+//                    }
+//                    catch {
+//                        return channel.eventLoop.makeCompletedFuture {
+//                            UpgradeResult.notUpgraded
+//                        }
+//                    }
+                    
+                    return channel.eventLoop.makeCompletedFuture {
+                        let asyncChannel = try NIOAsyncChannel<WebSocketFrame, WebSocketFrame>(synchronouslyWrapping: channel)
+                        return UpgradeResult.websocket(asyncChannel)
                     }
                 }
                 

@@ -9,6 +9,7 @@ WebSocket based client/server style actor system implementation.
 import Distributed
 import Foundation
 import NIO
+import NIOWebSocket
 import Logging
 
 #if canImport(Network)
@@ -77,10 +78,13 @@ public final class WebSocketActorSystem: DistributedActorSystem,
     public typealias CallID = UUID
     private let replyLock = NSLock()
     private var inFlightCalls: [CallID: CheckedContinuation<Data, Error>] = [:]
+    
+    private var pendingReplies = PendingReplies()
 
     // ==== Channels
     let group: EventLoopGroup
-    private var channel: Channel?
+    private var serverChannel: NIOAsyncChannel<EventLoopFuture<ServerUpgradeResult>, Never>?
+    private var channel: NIOAsyncChannel<WebSocketFrame, WebSocketFrame>?
     private var nodeRegistry = RemoteNodeRegistry()
 
     // === On-Demand resolve handler
@@ -93,7 +97,13 @@ public final class WebSocketActorSystem: DistributedActorSystem,
     
     /// The local port number, or -1 if there is no channel open
     public var localPort: Int {
-        channel?.localAddress?.port ?? -1
+        switch mode {
+        case .serverOnly:
+            return serverChannel?.channel.localAddress?.port ?? -1
+        case .clientFor:
+            return  channel?.channel.localAddress?.port ?? -1
+        }
+       
     }
 
     public init(mode: WebSocketActorSystemMode, id: NodeIdentity = .random(), logger: Logger = defaultLogger) async throws {
@@ -112,14 +122,99 @@ public final class WebSocketActorSystem: DistributedActorSystem,
             self.channel = try await startClient(host: serverAddress.host, port: serverAddress.port)
         case .serverOnly(let host, let port):
             self.group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
-            self.channel = try startServer(host: host, port: port)
+            self.serverChannel = try await startServer(host: host, port: port)
             logger.info("server listening on port \(localPort)")
         }
         
         logger.info("\(Self.self) initialized in mode: \(mode)")
     }
     
-    func associate(nodeID: NodeIdentity, with channel: Channel) {
+    func runServer() async throws {
+        guard let channel = serverChannel else {
+            logger.critical("Attempt to run server loop on client!")
+            return
+        }
+        
+        // We are handling each incoming connection in a separate child task. It is important
+        // to use a discarding task group here which automatically discards finished child tasks.
+        // A normal task group retains all child tasks and their outputs in memory until they are
+        // consumed by iterating the group or by exiting the group. Since, we are never consuming
+        // the results of the group we need the group to automatically discard them; otherwise, this
+        // would result in a memory leak over time.
+        try await withThrowingDiscardingTaskGroup { group in
+            for try await upgradeResult in channel.inbound {
+                group.addTask {
+                    await self.handleUpgradeResult(upgradeResult)
+                }
+            }
+        }
+    }
+    
+    
+    
+    // Listen for replies and incoming calls from the server.
+    func runClient() {
+        guard let channel = channel else {
+            logger.critical("Attempt to run client loop on server!")
+            return
+        }
+        
+        Task {
+            try await dispatchIncomingFrames(channel: channel)
+        }
+    }
+    
+    func dispatchIncomingFrames(channel: NIOAsyncChannel<WebSocketFrame, WebSocketFrame>) async throws {
+        for try await frame in channel.inbound {
+            switch frame.opcode {
+            case .connectionClose:
+                // Close the connection.
+                //
+                // We might also want to inform the actor system that this connection
+                // went away, so it can terminate any tasks or actors working to
+                // inform the remote receptionist on the now-gone system about our
+                // actors.
+                
+                // This is an unsolicited close. We're going to send a response frame and
+                // then, when we've sent it, close up shop. We should send back the close code the remote
+                // peer sent us, unless they didn't send one at all.
+                print("Received close")
+                var data = frame.unmaskedData
+                let closeDataCode = data.readSlice(length: 2) ?? ByteBuffer()
+                let closeFrame = WebSocketFrame(fin: true, opcode: .connectionClose, data: closeDataCode)
+                try await channel.outbound.write(closeFrame)
+                
+            case .text:
+                var data = frame.unmaskedData
+                let text = data.getString(at: 0, length: data.readableBytes) ?? ""
+                self.logger.withOp().trace("Received: \(text), from: \(String(describing: channel.channel.remoteAddress))")
+                
+                await self.decodeAndDeliver(data: &data, from: channel.channel.remoteAddress,
+                                            on: channel)
+            
+            case .ping:
+                print("Received ping")
+                var frameData = frame.data
+                let maskingKey = frame.maskKey
+                
+                if let maskingKey = maskingKey {
+                    frameData.webSocketUnmask(maskingKey)
+                }
+                
+                let responseFrame = WebSocketFrame(fin: true, opcode: .pong, data: frameData)
+                try await channel.outbound.write(responseFrame)
+                
+            case .binary, .continuation, .pong:
+                // We ignore these frames.
+                break
+            default:
+                // Unknown frames are errors.
+                await self.closeOnError(channel: channel)
+            }
+        }
+    }
+    
+    func associate(nodeID: NodeIdentity, with channel: NIOAsyncChannel<WebSocketFrame, WebSocketFrame>) {
         self.lock.lock()
         defer { self.lock.unlock() }
         nodeRegistry.register(id: nodeID, channel: channel)
@@ -316,7 +411,7 @@ extension WebSocketActorSystem {
 
 extension WebSocketActorSystem {
     func decodeAndDeliver(data: inout ByteBuffer, from address: SocketAddress?,
-                          on channel: Channel) {
+                          on channel: NIOAsyncChannel<WebSocketFrame, WebSocketFrame>) async {
         let decoder = JSONDecoder()
         decoder.userInfo[.actorSystemKey] = self
         
@@ -330,7 +425,7 @@ extension WebSocketActorSystem {
                 // log("receive-decode-deliver", "Decode remoteCall...")
                 self.receiveInboundCall(envelope: remoteCallEnvelope, on: channel)
             case .reply(let replyEnvelope):
-                self.receiveInboundReply(envelope: replyEnvelope, on: channel)
+                try await self.receiveInboundReply(envelope: replyEnvelope, on: channel)
             case .none, .connectionClose:
                 taggedLogger.error("Failed decoding: \(data); decoded empty")
             }
@@ -340,7 +435,7 @@ extension WebSocketActorSystem {
         taggedLogger.trace("done")
     }
 
-    func receiveInboundCall(envelope: RemoteWebSocketCallEnvelope, on channel: Channel) {
+    func receiveInboundCall(envelope: RemoteWebSocketCallEnvelope, on channel: NIOAsyncChannel<WebSocketFrame, WebSocketFrame>) {
         let taggedLogger = logger.withOp()
         taggedLogger.trace("Envelope: \(envelope)")
         Task {
@@ -379,21 +474,10 @@ extension WebSocketActorSystem {
         }
     }
 
-    func receiveInboundReply(envelope: WebSocketReplyEnvelope, on channel: Channel) {
+    func receiveInboundReply(envelope: WebSocketReplyEnvelope, on channel: NIOAsyncChannel<WebSocketFrame, WebSocketFrame>) async throws {
         let taggedLogger = logger.withOp()
         taggedLogger.trace("Reply envelope: \(envelope)")
-        self.replyLock.lock()
-        taggedLogger.trace("Reply envelope delivering...: \(envelope)")
-
-        guard let callContinuation = self.inFlightCalls.removeValue(forKey: envelope.callID) else {
-            taggedLogger.warning("Missing continuation for call \(envelope.callID); Envelope: \(envelope)")
-            self.replyLock.unlock()
-            return
-        }
-
-        self.replyLock.unlock()
-        taggedLogger.trace("Reply envelope delivering... RESUME: \(envelope)")
-        callContinuation.resume(returning: envelope.value)
+        try await pendingReplies.receivedReply(callID: envelope.callID, data: envelope.value)
     }
 }
 
@@ -415,18 +499,24 @@ extension WebSocketActorSystem {
         taggedLogger.debug("channel: \(channel)")
 
         taggedLogger.trace("Prepare [\(target)] call...")
-        let replyData = try await withCallIDContinuation(recipient: actor) { callID in
+        
+        let localInvocation = invocation
+        
+        let replyData = try await pendingReplies.sendMessage { callID in
             let callEnvelope = RemoteWebSocketCallEnvelope(
                 callID: callID,
                 recipient: actor.id,
                 invocationTarget: target.identifier,
-                genericSubs: invocation.genericSubs,
-                args: invocation.argumentData
+                genericSubs: localInvocation.genericSubs,
+                args: localInvocation.argumentData
             )
             let wireEnvelope = WebSocketWireEnvelope.call(callEnvelope)
 
             taggedLogger.debug("Write envelope: \(wireEnvelope)")
-            channel.writeAndFlush(wireEnvelope, promise: nil)
+            
+//            let frame = WebSocketFrame(opcode: .text, data: try JSONEncoder().encode(wireEnvelope))
+            
+            try await self.write(channel: channel, envelope: wireEnvelope)
         }
 
         do {
@@ -449,29 +539,66 @@ extension WebSocketActorSystem {
         taggedLogger.trace("Call to: \(actor.id), target: \(target), target.identifier: \(target.identifier)")
         
         let channel = try selectChannel(for: actor.id)
-        taggedLogger.debug("channel: \(channel)")
+//        taggedLogger.debug("channel: \(channel)")
+        
+        let localInvocation = invocation
         
         taggedLogger.trace("Prepare [\(target)] call...")
-        _ = try await withCallIDContinuation(recipient: actor) { callID in
+        _ = try await pendingReplies.sendMessage { callID in
             let callEnvelope = RemoteWebSocketCallEnvelope(
                 callID: callID,
                 recipient: actor.id,
                 invocationTarget: target.identifier,
-                genericSubs: invocation.genericSubs,
-                args: invocation.argumentData
+                genericSubs: localInvocation.genericSubs,
+                args: localInvocation.argumentData
             )
             let wireEnvelope = WebSocketWireEnvelope.call(callEnvelope)
             
             taggedLogger.debug("Write envelope: \(wireEnvelope)")
-            channel.writeAndFlush(wireEnvelope, promise: nil)
+            
+            try await self.write(channel: channel, envelope: wireEnvelope)
         }
         
         taggedLogger.trace("COMPLETED CALL: \(target)")
     }
+    
+    
+    
+    func write(channel: NIOAsyncChannel<WebSocketFrame, WebSocketFrame>, 
+               envelope: WebSocketWireEnvelope) async throws {
+        let taggedLogger = logger.withOp()
+        taggedLogger.trace("unwrap WebSocketWireEnvelope")
+
+        switch envelope {
+        case .connectionClose:
+            var data = channel.channel.allocator.buffer(capacity: 2)
+            data.write(webSocketErrorCode: .protocolError)
+            let frame = WebSocketFrame(fin: true,
+                opcode: .connectionClose,
+                data: data)
+            try await channel.outbound.write(frame)
+            try await channel.channel.close()
+        case .reply, .call:
+            let encoder = JSONEncoder()
+            encoder.userInfo[.actorSystemKey] = self
+            encoder.userInfo[.channelKey] = channel
+
+            do {
+                var data = ByteBuffer()
+                try data.writeJSONEncodable(envelope, encoder: encoder)
+                taggedLogger.trace("Write: \(envelope)")
+
+                let frame = WebSocketFrame(fin: true, opcode: .text, data: data)
+                try await channel.outbound.write(frame)
+            } catch {
+                taggedLogger.error("Failed to serialize call [\(envelope)], error: \(error)")
+            }
+        }
+    }
 
     /// Return the Channel we should use to communicate with the given actor..
     /// Throws an exception if the actor is not reachable.
-    func selectChannel(for actorID: ActorID) throws -> Channel {
+    func selectChannel(for actorID: ActorID) throws -> NIOAsyncChannel<WebSocketFrame, WebSocketFrame> {
         switch mode {
         case .clientFor:
             // On the client, any actor without a known NodeID is assumed to be on the server.
@@ -521,7 +648,7 @@ public struct WebSocketActorSystemResultHandler: DistributedTargetInvocationResu
     let actorSystem: WebSocketActorSystem
     let callID: WebSocketActorSystem.CallID
     let system: WebSocketActorSystem
-    let channel: Channel
+    let channel: NIOAsyncChannel<WebSocketFrame, WebSocketFrame>
 
     public func onReturn<Success: Codable>(value: Success) async throws {
         system.logger.withOp().trace("Write to channel: \(channel)")
@@ -529,13 +656,15 @@ public struct WebSocketActorSystemResultHandler: DistributedTargetInvocationResu
         encoder.userInfo[.actorSystemKey] = actorSystem
         let returnValue = try encoder.encode(value)
         let envelope = WebSocketReplyEnvelope(callID: self.callID, sender: nil, value: returnValue)
-        channel.write(WebSocketWireEnvelope.reply(envelope), promise: nil)
+        try await actorSystem.write(channel: channel, envelope: WebSocketWireEnvelope.reply(envelope))
+//        try await channel.channel.writeAndFlush(WebSocketWireEnvelope.reply(envelope))
     }
 
     public func onReturnVoid() async throws {
         system.logger.withOp().trace("Write to channel: \(channel)")
         let envelope = WebSocketReplyEnvelope(callID: self.callID, sender: nil, value: "".data(using: .utf8)!)
-        channel.write(WebSocketWireEnvelope.reply(envelope), promise: nil)
+        try await actorSystem.write(channel: channel, envelope: WebSocketWireEnvelope.reply(envelope))
+//        try await channel.channel.writeAndFlush(WebSocketWireEnvelope.reply(envelope))
     }
 
     public func onThrow<Err: Error>(error: Err) async throws {
@@ -544,7 +673,8 @@ public struct WebSocketActorSystemResultHandler: DistributedTargetInvocationResu
         // Always be careful when exposing error information -- especially do not ship back the entire description
         // or error of a thrown value as it may contain information which should never leave the node.
         let envelope = WebSocketReplyEnvelope(callID: self.callID, sender: nil, value: "".data(using: .utf8)!)
-        channel.write(WebSocketWireEnvelope.reply(envelope), promise: nil)
+        try await actorSystem.write(channel: channel, envelope: WebSocketWireEnvelope.reply(envelope))
+//        try await channel.channel.writeAndFlush(WebSocketWireEnvelope.reply(envelope))
     }
 }
 
@@ -587,4 +717,6 @@ public enum WebSocketActorSystemError: Error, DistributedActorSystemError {
     case noChannelToNode(id: NodeIdentity)
     
     case failedToUpgrade
+    
+    case missingReplyContinuation(callID: UUID)
 }

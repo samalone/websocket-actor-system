@@ -8,6 +8,7 @@ Invocation decoder from a NIO byte buffer.
 import Distributed
 import Foundation
 import NIO
+import NIOWebSocket
 import Logging
 
 public class NIOInvocationDecoder: DistributedTargetInvocationDecoder {
@@ -16,10 +17,10 @@ public class NIOInvocationDecoder: DistributedTargetInvocationDecoder {
     let decoder: JSONDecoder
     let envelope: RemoteWebSocketCallEnvelope
     let logger: Logger
-    let channel: Channel
+    let channel: NIOAsyncChannel<WebSocketFrame, WebSocketFrame>
     var argumentsIterator: Array<Data>.Iterator
 
-    internal init(system: WebSocketActorSystem, envelope: RemoteWebSocketCallEnvelope, channel: Channel) {
+    internal init(system: WebSocketActorSystem, envelope: RemoteWebSocketCallEnvelope, channel: NIOAsyncChannel<WebSocketFrame, WebSocketFrame>) {
         self.envelope = envelope
         self.logger = system.logger
         self.channel = channel

@@ -7,6 +7,7 @@
 
 import Foundation
 import NIO
+import NIOWebSocket
 
 /// The ``RemoteNodeRegistry`` maintains a three-way association between a
 /// ``NodeIdentity``, a ``NodeAddress``, and a ``Channel``. This allows us to
@@ -31,7 +32,7 @@ struct RemoteNodeRegistry {
         }
     }
     
-    mutating func register(id: NodeIdentity, channel: Channel) {
+    mutating func register(id: NodeIdentity, channel: NIOAsyncChannel<WebSocketFrame, WebSocketFrame>) {
         if let rnc = byNodeID[id] {
             rnc.channel = channel
         }
@@ -40,15 +41,15 @@ struct RemoteNodeRegistry {
         }
     }
     
-    mutating func channelClosed(channel: Channel) {
+    mutating func channelClosed(channel: NIOAsyncChannel<WebSocketFrame, WebSocketFrame>) {
         for rnc in byNodeID.values {
-            if rnc.channel === channel {
+            if rnc.channel?.channel === channel.channel {
                 rnc.channel = nil
             }
         }
     }
     
-    func channel(for nodeID: NodeIdentity) -> Channel? {
+    func channel(for nodeID: NodeIdentity) -> NIOAsyncChannel<WebSocketFrame, WebSocketFrame>? {
         guard let rnc = byNodeID[nodeID] else { return nil }
         return rnc.channel
     }
@@ -58,9 +59,9 @@ struct RemoteNodeRegistry {
         return rnc.address
     }
     
-    func nodeID(for channel: Channel) -> NodeIdentity? {
+    func nodeID(for channel: WebSocketAgentChannel) -> NodeIdentity? {
         for rnc in byNodeID.values {
-            if rnc.channel === channel {
+            if rnc.channel?.channel === channel.channel {
                 return rnc.id
             }
         }

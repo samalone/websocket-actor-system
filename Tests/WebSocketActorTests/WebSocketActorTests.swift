@@ -86,6 +86,12 @@ final class WebsocketActorSystemTests: XCTestCase {
         server = try await WebSocketActorSystem(mode: .serverOnly(host: "localhost", port: 0),
                                           id: .server,
                                           logger: Logger(label: "\(name) server").with(level: .trace))
+        // We need this function to return so the unit tests can run,
+        // but we also need the server to continue running in the background.
+        // Spawn a new task to run the server.
+        Task {
+            try await server.runServer()
+        }
     }
     
     override func tearDown() async throws {
@@ -118,6 +124,7 @@ final class WebsocketActorSystemTests: XCTestCase {
     func testRemoteCalls() async throws {
         let client = try await WebSocketActorSystem(mode: .clientFor(server: NodeAddress(scheme: "ws", host: "localhost", port: server.localPort)),
                                           logger: Logger(label: "\(name) client").with(level: .trace))
+        client.runClient()
     
 //        try await Task.sleep(for: .seconds(1))
         
@@ -145,6 +152,7 @@ final class WebsocketActorSystemTests: XCTestCase {
     func testServerPush() async throws {
         let client = try await WebSocketActorSystem(mode: .clientFor(server: NodeAddress(scheme: "ws", host: "localhost", port: server.localPort)),
                                           logger: Logger(label: "\(name) client").with(level: .trace))
+        client.runClient()
         
         // Create the real Alice on the server
         let serverAlice = server.makeActor(id: .alice) {

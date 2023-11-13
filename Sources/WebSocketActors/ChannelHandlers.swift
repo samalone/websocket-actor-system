@@ -88,54 +88,54 @@ final class HTTPInitialRequestHandler: ChannelInboundHandler, RemovableChannelHa
     }
 }
 
-final class WebSocketMessageOutboundHandler: ChannelOutboundHandler {
-    typealias OutboundIn = WebSocketWireEnvelope
-    typealias OutboundOut = WebSocketFrame
-    
-    let actorSystem: WebSocketActorSystem
-    init(actorSystem: WebSocketActorSystem) {
-        self.actorSystem = actorSystem
-    }
-    
-    public func handlerRemoved(context: ChannelHandlerContext) {
-        // While we do this, we should also notify the system about any cleanups
-        // it might need to do. E.g. if it has receptionist connections to the peer
-        // that has now disconnected, we should stop tasks interacting with it etc.
-        print("WebSocket handler removed.")
-    }
-    
-    func write(context: ChannelHandlerContext, data: NIOAny, promise: EventLoopPromise<Void>?) {
-        let taggedLogger = actorSystem.logger.withOp()
-        taggedLogger.trace("unwrap \(Self.OutboundIn.self)")
-        let envelope: WebSocketWireEnvelope = self.unwrapOutboundIn(data)
-
-        switch envelope {
-        case .connectionClose:
-            var data = context.channel.allocator.buffer(capacity: 2)
-            data.write(webSocketErrorCode: .protocolError)
-            let frame = WebSocketFrame(fin: true,
-                opcode: .connectionClose,
-                data: data)
-            context.writeAndFlush(self.wrapOutboundOut(frame)).whenComplete { (_: Result<Void, Error>) in
-                context.close(promise: nil)
-            }
-        case .reply, .call:
-            let encoder = JSONEncoder()
-            encoder.userInfo[.actorSystemKey] = actorSystem
-
-            do {
-                var data = ByteBuffer()
-                try data.writeJSONEncodable(envelope, encoder: encoder)
-                taggedLogger.trace("Write: \(envelope), to: \(context)")
-
-                let frame = WebSocketFrame(fin: true, opcode: .text, data: data)
-                context.writeAndFlush(self.wrapOutboundOut(frame), promise: nil)
-            } catch {
-                taggedLogger.error("Failed to serialize call [\(envelope)], error: \(error)")
-            }
-        }
-    }
-}
+//final class WebSocketMessageOutboundHandler: ChannelOutboundHandler {
+//    typealias OutboundIn = WebSocketWireEnvelope
+//    typealias OutboundOut = WebSocketFrame
+//    
+//    let actorSystem: WebSocketActorSystem
+//    init(actorSystem: WebSocketActorSystem) {
+//        self.actorSystem = actorSystem
+//    }
+//    
+//    public func handlerRemoved(context: ChannelHandlerContext) {
+//        // While we do this, we should also notify the system about any cleanups
+//        // it might need to do. E.g. if it has receptionist connections to the peer
+//        // that has now disconnected, we should stop tasks interacting with it etc.
+//        print("WebSocket handler removed.")
+//    }
+//    
+//    func write(context: ChannelHandlerContext, data: NIOAny, promise: EventLoopPromise<Void>?) {
+//        let taggedLogger = actorSystem.logger.withOp()
+//        taggedLogger.trace("unwrap \(Self.OutboundIn.self)")
+//        let envelope: WebSocketWireEnvelope = self.unwrapOutboundIn(data)
+//
+//        switch envelope {
+//        case .connectionClose:
+//            var data = context.channel.allocator.buffer(capacity: 2)
+//            data.write(webSocketErrorCode: .protocolError)
+//            let frame = WebSocketFrame(fin: true,
+//                opcode: .connectionClose,
+//                data: data)
+//            context.writeAndFlush(self.wrapOutboundOut(frame)).whenComplete { (_: Result<Void, Error>) in
+//                context.close(promise: nil)
+//            }
+//        case .reply, .call:
+//            let encoder = JSONEncoder()
+//            encoder.userInfo[.actorSystemKey] = actorSystem
+//
+//            do {
+//                var data = ByteBuffer()
+//                try data.writeJSONEncodable(envelope, encoder: encoder)
+//                taggedLogger.trace("Write: \(envelope), to: \(context)")
+//
+//                let frame = WebSocketFrame(fin: true, opcode: .text, data: data)
+//                context.writeAndFlush(self.wrapOutboundOut(frame), promise: nil)
+//            } catch {
+//                taggedLogger.error("Failed to serialize call [\(envelope)], error: \(error)")
+//            }
+//        }
+//    }
+//}
 
 // ===== --------------------------------------------------------------------------------------------------------------
 // MARK: Server-side handlers
@@ -205,6 +205,8 @@ final class HTTPHandler: ChannelInboundHandler, RemovableChannelHandler {
     }
 }
 
+#if false
+@available(*, deprecated, message: "Use the NIOAsyncChannel directly")
 final class WebSocketActorMessageInboundHandler: ChannelInboundHandler {
     typealias InboundIn = WebSocketFrame
     typealias OutboundOut = WebSocketWireEnvelope
@@ -216,7 +218,7 @@ final class WebSocketActorMessageInboundHandler: ChannelInboundHandler {
         self.actorSystem = actorSystem
     }
     
-    public func channelRead(context: ChannelHandlerContext, data: NIOAny) {
+    public func channelRead(context: ChannelHandlerContext, data: NIOAny) async {
         let frame = self.unwrapInboundIn(data)
 
         switch frame.opcode {
@@ -233,14 +235,14 @@ final class WebSocketActorMessageInboundHandler: ChannelInboundHandler {
             let text = data.getString(at: 0, length: data.readableBytes) ?? ""
             actorSystem.logger.withOp().trace("Received: \(text), from: \(context)")
 
-            actorSystem.decodeAndDeliver(data: &data, from: context.remoteAddress, on: context.channel)
+            await actorSystem.decodeAndDeliver(data: &data, from: context.remoteAddress, on: channel)
 
         case .binary, .continuation, .pong, .ping:
             // We ignore these frames.
             break
         default:
             // Unknown frames are errors.
-            self.closeOnError(context: context)
+            await self.closeOnError(channel: channel)
         }
     }
     
@@ -248,32 +250,43 @@ final class WebSocketActorMessageInboundHandler: ChannelInboundHandler {
         context.flush()
     }
 
-    private func receivedClose(context: ChannelHandlerContext, frame: WebSocketFrame) {
+    private func receivedClose(channel: NIOAsyncChannel<WebSocketFrame, WebSocketFrame>,
+                               frame: WebSocketFrame) async {
         // Handle a received close frame. In websockets, we're just going to send the close
         // frame and then close, unless we already sent our own close frame.
-        if awaitingClose {
-            // Cool, we started the close and were waiting for the user. We're done.
-            context.close(promise: nil)
-        } else {
-            // This is an unsolicited close. We're going to send a response frame and
-            // then, when we've sent it, close up shop. We should send back the close code the remote
-            // peer sent us, unless they didn't send one at all.
-            _ = context.write(self.wrapOutboundOut(.connectionClose)).map { () in
-                context.close(promise: nil)
+        do {
+            if awaitingClose {
+                // Cool, we started the close and were waiting for the user. We're done.
+                try await channel.channel.close()
+            } else {
+                // This is an unsolicited close. We're going to send a response frame and
+                // then, when we've sent it, close up shop. We should send back the close code the remote
+                // peer sent us, unless they didn't send one at all.
+                try? await channel.channel.writeAndFlush(wrapOutboundOut(.connectionClose))
+                try await channel.channel.close()
             }
+        }
+        catch {
+            actorSystem.logger.error("Error closing channel after error: \(error)")
         }
     }
     
-    private func closeOnError(context: ChannelHandlerContext) {
+    private func closeOnError(channel: NIOAsyncChannel<WebSocketFrame, WebSocketFrame>) async {
         // We have hit an error, we want to close. We do that by sending a close frame and then
         // shutting down the write side of the connection.
-        var data = context.channel.allocator.buffer(capacity: 2)
+        var data = channel.channel.allocator.buffer(capacity: 2)
         data.write(webSocketErrorCode: .protocolError)
-
-        context.write(self.wrapOutboundOut(.connectionClose)).whenComplete { (_: Result<Void, Error>) in
-            context.close(mode: .output, promise: nil)
+        
+        do {
+            try? await channel.channel.writeAndFlush(wrapOutboundOut(.connectionClose))
+            try await channel.channel.close(mode: .output)
+        }
+        catch {
+            actorSystem.logger.error("Error closing channel after error: \(error)")
         }
 
         awaitingClose = true
     }
 }
+#endif
+

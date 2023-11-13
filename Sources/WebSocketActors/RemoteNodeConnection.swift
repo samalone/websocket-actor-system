@@ -7,6 +7,7 @@
 
 import Foundation
 import NIO
+import NIOWebSocket
 
 class RemoteNodeConnection: Identifiable, Hashable, Equatable {
     /// The ID of the remote node.
@@ -18,9 +19,9 @@ class RemoteNodeConnection: Identifiable, Hashable, Equatable {
     
     /// The current communications channel to the remote node, or nil
     /// if the connection has been lost.
-    var channel: Channel?
+    var channel: NIOAsyncChannel<WebSocketFrame, WebSocketFrame>?
     
-    init(id: NodeIdentity, address: NodeAddress? = nil, channel: Channel? = nil) {
+    init(id: NodeIdentity, address: NodeAddress? = nil, channel: NIOAsyncChannel<WebSocketFrame, WebSocketFrame>? = nil) {
         self.id = id
         self.address = address
         self.channel = channel

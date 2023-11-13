@@ -16,7 +16,7 @@ import NIOPosix
 import NIOHTTP1
 import NIOWebSocket
 
-/*
+
 @main
 struct Client {
     /// The host to connect to.
@@ -132,4 +132,4 @@ struct Client {
         }
     }
 }
-*/
+

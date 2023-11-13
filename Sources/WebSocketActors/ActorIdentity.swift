@@ -8,6 +8,7 @@ Used as `ActorID` by all distributed actors in this sample app. It is used to un
 import Foundation
 import Distributed
 import NIO
+import NIOWebSocket
 
 /// An `ActorIdentity` is a string that uniquely identifies a distributed object
 /// across all of the clients and servers in a ``WebSocketActorSystem``.
@@ -104,7 +105,7 @@ extension ActorIdentity: Decodable {
            let nodeID = self.node,
            nodeID != system.nodeID {
             
-            guard let channel = decoder.userInfo[.channelKey] as? Channel else {
+            guard let channel = decoder.userInfo[.channelKey] as? NIOAsyncChannel<WebSocketFrame, WebSocketFrame> else {
                 fatalError("Unable to associate NodeID \(nodeID) with Channel, because .channelKey was not set on the Decoder.userInfo")
             }
             
