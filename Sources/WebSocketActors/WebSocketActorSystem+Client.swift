@@ -20,25 +20,23 @@ import NIOFoundationCompat
     typealias PlatformBootstrap = ClientBootstrap
 #endif
 
-typealias WebSocketAgentChannel = NIOAsyncChannel<WebSocketWireEnvelope, WebSocketWireEnvelope>
-
 // ==== ----------------------------------------------------------------------------------------------------------------
 // - MARK: Client-side networking stack
 
 extension WebSocketActorSystem {
     
     enum UpgradeResult {
-        case websocket(NIOAsyncChannel<WebSocketFrame, WebSocketFrame>)
+        case websocket(WebSocketAgentChannel)
         case notUpgraded
     }
     
-    func startClient(host: String, port: Int) async throws -> NIOAsyncChannel<WebSocketFrame, WebSocketFrame> {
-        let bootstrap = PlatformBootstrap(group: group)
+    internal func openClientChannel(host: String, port: Int) async throws -> WebSocketAgentChannel {
+        let bootstrap = PlatformBootstrap(group: ClientManager.group)
         let upgradeResult = try await bootstrap.connect(host: host, port: port) { channel in
             channel.eventLoop.makeCompletedFuture {
                 let upgrader = NIOTypedWebSocketClientUpgrader<UpgradeResult> { channel, responseHead in
                     return channel.eventLoop.makeCompletedFuture {
-                        let asyncChannel = try NIOAsyncChannel<WebSocketFrame, WebSocketFrame>(synchronouslyWrapping: channel)
+                        let asyncChannel = try WebSocketAgentChannel(synchronouslyWrapping: channel)
                         return UpgradeResult.websocket(asyncChannel)
                     }
                 }
@@ -78,5 +76,59 @@ extension WebSocketActorSystem {
         case .notUpgraded:
             throw WebSocketActorSystemError.failedToUpgrade
         }
+    }
+    
+    public actor ClientManager: Manager {
+        private var _task: ResilientTask?
+        var channel: WebSocketAgentChannel?
+        
+#if canImport(Network)
+        static let group = NIOTSEventLoopGroup.singleton
+#else
+        static let group = MultiThreadedEventLoopGroup.singleton
+#endif
+        
+        var task: ResilientTask {
+            _task!
+        }
+        
+        var localPort: Int {
+            channel?.channel.localAddress?.port ?? 0
+        }
+        
+        func associate(nodeID: NodeIdentity, with channel: WebSocketAgentChannel) {
+            // We don't have to do anything, because we only support one remote channel.
+        }
+        
+        func selectChannel(for actorID: ActorIdentity) async throws -> WebSocketAgentChannel {
+            guard let channel = channel else {
+                throw WebSocketActorSystemError.noChannelToNode(id: actorID.node ?? NodeIdentity(id: "unknown"))
+            }
+            return channel
+        }
+        
+        func setTask(_ task: ResilientTask) {
+            self._task = task
+        }
+        
+        func setChannel(_ channel: WebSocketAgentChannel) {
+            self.channel = channel
+        }
+        
+        func cancel() async {
+            _task?.cancel()
+        }
+    }
+    
+    internal func createClientManager(host: String, port: Int) async -> ClientManager {
+        let manager = ClientManager()
+        let task = ResilientTask() { initialized in
+            let channel = try await self.openClientChannel(host: host, port: port)
+            await manager.setChannel(channel)
+            await initialized()
+            try await self.dispatchIncomingFrames(channel: channel)
+        }
+        await manager.setTask(task)
+        return manager
     }
 }

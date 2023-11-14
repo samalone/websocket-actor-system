@@ -17,10 +17,10 @@ public class NIOInvocationDecoder: DistributedTargetInvocationDecoder {
     let decoder: JSONDecoder
     let envelope: RemoteWebSocketCallEnvelope
     let logger: Logger
-    let channel: NIOAsyncChannel<WebSocketFrame, WebSocketFrame>
+    let channel: WebSocketAgentChannel
     var argumentsIterator: Array<Data>.Iterator
 
-    internal init(system: WebSocketActorSystem, envelope: RemoteWebSocketCallEnvelope, channel: NIOAsyncChannel<WebSocketFrame, WebSocketFrame>) {
+    internal init(system: WebSocketActorSystem, envelope: RemoteWebSocketCallEnvelope, channel: WebSocketAgentChannel) {
         self.envelope = envelope
         self.logger = system.logger
         self.channel = channel

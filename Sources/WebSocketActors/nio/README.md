@@ -1,4 +1,4 @@
-# About the nio folder...
+# About the nio folder
 
 This folder contains files from NIO pull requests
 [#2517](https://github.com/apple/swift-nio/pull/2517) and

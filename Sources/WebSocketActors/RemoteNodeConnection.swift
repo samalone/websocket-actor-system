@@ -19,9 +19,9 @@ class RemoteNodeConnection: Identifiable, Hashable, Equatable {
     
     /// The current communications channel to the remote node, or nil
     /// if the connection has been lost.
-    var channel: NIOAsyncChannel<WebSocketFrame, WebSocketFrame>?
+    var channel: WebSocketAgentChannel?
     
-    init(id: NodeIdentity, address: NodeAddress? = nil, channel: NIOAsyncChannel<WebSocketFrame, WebSocketFrame>? = nil) {
+    init(id: NodeIdentity, address: NodeAddress? = nil, channel: WebSocketAgentChannel? = nil) {
         self.id = id
         self.address = address
         self.channel = channel

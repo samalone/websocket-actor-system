@@ -38,6 +38,8 @@ internal struct RemoteWebSocketCallEnvelope: Sendable, Codable {
     let args: [Data]
 }
 
+internal typealias WebSocketAgentChannel = NIOAsyncChannel<WebSocketFrame, WebSocketFrame>
+
 public enum WebSocketActorSystemMode {
     case clientFor(server: NodeAddress)
     case serverOnly(host: String, port: Int)
@@ -88,10 +90,18 @@ public final class WebSocketActorSystem: DistributedActorSystem,
     private var pendingReplies = PendingReplies()
 
     // ==== Channels
-    let group: EventLoopGroup
-    private var serverChannel: NIOAsyncChannel<EventLoopFuture<ServerUpgradeResult>, Never>?
-    private var channel: NIOAsyncChannel<WebSocketFrame, WebSocketFrame>?
-    private var nodeRegistry = RemoteNodeRegistry()
+//    let group: EventLoopGroup
+    
+    /// The channel the server is listening on for new client connections.
+    /// This may change over time if there are network errors and the channel
+    /// has to be re-opened.
+//    private var serverChannel: NIOAsyncChannel<EventLoopFuture<ServerUpgradeResult>, Never>?
+    
+    /// The client's channel to the server.
+//    private var channel: WebSocketAgentChannel?
+    
+    var mode: WebSocketActorSystemMode
+    private var manager: Manager = StubManager()
 
     // === On-Demand resolve handler
 
@@ -99,89 +109,32 @@ public final class WebSocketActorSystem: DistributedActorSystem,
     private var resolveOnDemandHandler: OnDemandResolveHandler? = nil
 
     // === Configuration
-    public let mode: WebSocketActorSystemMode
-    
-    /// The local port number, or -1 if there is no channel open
-    public var localPort: Int {
-        switch mode {
-        case .serverOnly:
-            return serverChannel?.channel.localAddress?.port ?? -1
-        case .clientFor:
-            return  channel?.channel.localAddress?.port ?? -1
-        }
-       
-    }
+//    public let mode: WebSocketActorSystemMode
 
     public init(mode: WebSocketActorSystemMode, id: NodeIdentity = .random(), logger: Logger = defaultLogger) async throws {
         self.nodeID = id
+        self.logger = logger
         self.mode = mode
-        self.logger = logger.with(mode)
         
         // Start networking
         switch mode {
         case .clientFor(let serverAddress):
-#if canImport(Network)
-            self.group = NIOTSEventLoopGroup()
-#else
-            self.group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
-#endif
-            self.channel = try await startClient(host: serverAddress.host, port: serverAddress.port)
+            self.manager = await createClientManager(host: serverAddress.host, port: serverAddress.port)
         case .serverOnly(let host, let port):
-            self.group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
-            self.serverChannel = try await startServer(host: host, port: port)
-            logger.info("server listening on port \(localPort)")
+            self.manager = await createServerManager(host: host, port: port)
+//            logger.info("server listening on port \(localPort)")
         }
         
         logger.info("\(Self.self) initialized in mode: \(mode)")
     }
     
-    func runServer() async throws {
-        guard let channel = serverChannel else {
-            logger.critical("Attempt to run server loop on client!")
-            return
-        }
-        
-        // We are handling each incoming connection in a separate child task. It is important
-        // to use a discarding task group here which automatically discards finished child tasks.
-        // A normal task group retains all child tasks and their outputs in memory until they are
-        // consumed by iterating the group or by exiting the group. Since, we are never consuming
-        // the results of the group we need the group to automatically discard them; otherwise, this
-        // would result in a memory leak over time.
-        if #available(macOS 14.0, iOS 17.0, watchOS 10.0, tvOS 17.0, *) {
-            try await withThrowingDiscardingTaskGroup { group in
-                for try await upgradeResult in channel.inbound {
-                    group.addTask {
-                        await self.handleUpgradeResult(upgradeResult)
-                    }
-                }
-            }
-        } else {
-            // Fallback on earlier versions
-            try await withThrowingTaskGroup(of: Void.self) { group in
-                for try await upgradeResult in channel.inbound {
-                    group.addTask {
-                        await self.handleUpgradeResult(upgradeResult)
-                    }
-                }
-            }
+    public var localPort: Int {
+        get async {
+            await manager.localPort
         }
     }
     
-    
-    
-    // Listen for replies and incoming calls from the server.
-    func runClient() {
-        guard let channel = channel else {
-            logger.critical("Attempt to run client loop on server!")
-            return
-        }
-        
-        Task {
-            try await dispatchIncomingFrames(channel: channel)
-        }
-    }
-    
-    func dispatchIncomingFrames(channel: NIOAsyncChannel<WebSocketFrame, WebSocketFrame>) async throws {
+    func dispatchIncomingFrames(channel: WebSocketAgentChannel) async throws {
         for try await frame in channel.inbound {
             switch frame.opcode {
             case .connectionClose:
@@ -231,18 +184,18 @@ public final class WebSocketActorSystem: DistributedActorSystem,
         }
     }
     
-    func associate(nodeID: NodeIdentity, with channel: NIOAsyncChannel<WebSocketFrame, WebSocketFrame>) {
-        self.lock.lock()
-        defer { self.lock.unlock() }
-        nodeRegistry.register(id: nodeID, channel: channel)
+    func associate(nodeID: NodeIdentity, with channel: WebSocketAgentChannel) {
+        // TODO: I don't like using a background task here.
+        // to associate the NodeIdentity with
+        // the channel, but this function is called from synchronous code,
+        // and channels are created and dropped asynchronously.
+        Task {
+            await manager.associate(nodeID: nodeID, with: channel)
+        }
     }
     
-    public func shutdownGracefully() async throws {
-        try await group.shutdownGracefully()
-    }
-
-    public func syncShutdownGracefully() {
-        try! group.syncShutdownGracefully()
+    public func shutdownGracefully() async {
+        await manager.cancel()
     }
 
     public func assignID<Act>(_ actorType: Act.Type) -> ActorID where Act: DistributedActor, Act.ID == ActorID {
@@ -279,7 +232,6 @@ public final class WebSocketActorSystem: DistributedActorSystem,
 
     /// Register the actor as a local actor.
     public func actorReady<Act>(_ actor: Act) where Act: DistributedActor, ActorID == Act.ID {
-//        log("actorReady[\(self.mode)]", "resign ID: \(actor.id)")
         logger.info("actorReady", metadata: ["actorID": .stringConvertible(actor.id)])
 
         if !Self.alreadyLocked {
@@ -296,7 +248,6 @@ public final class WebSocketActorSystem: DistributedActorSystem,
 
     /// Unregister the actors as a local actor.
     public func resignID(_ id: ActorID) {
-//        log("resignID[\(self.mode)]", "resign ID: \(id)")
         logger.info("resignID", metadata: ["actorID": .stringConvertible(id)])
         lock.lock()
         defer {
@@ -428,7 +379,7 @@ extension WebSocketActorSystem {
 
 extension WebSocketActorSystem {
     func decodeAndDeliver(data: inout ByteBuffer, from address: SocketAddress?,
-                          on channel: NIOAsyncChannel<WebSocketFrame, WebSocketFrame>) async {
+                          on channel: WebSocketAgentChannel) async {
         let decoder = JSONDecoder()
         decoder.userInfo[.actorSystemKey] = self
         
@@ -452,7 +403,7 @@ extension WebSocketActorSystem {
         taggedLogger.trace("done")
     }
 
-    func receiveInboundCall(envelope: RemoteWebSocketCallEnvelope, on channel: NIOAsyncChannel<WebSocketFrame, WebSocketFrame>) {
+    func receiveInboundCall(envelope: RemoteWebSocketCallEnvelope, on channel: WebSocketAgentChannel) {
         let taggedLogger = logger.withOp()
         taggedLogger.trace("Envelope: \(envelope)")
         Task {
@@ -491,7 +442,7 @@ extension WebSocketActorSystem {
         }
     }
 
-    func receiveInboundReply(envelope: WebSocketReplyEnvelope, on channel: NIOAsyncChannel<WebSocketFrame, WebSocketFrame>) async throws {
+    func receiveInboundReply(envelope: WebSocketReplyEnvelope, on channel: WebSocketAgentChannel) async throws {
         let taggedLogger = logger.withOp()
         taggedLogger.trace("Reply envelope: \(envelope)")
         try await pendingReplies.receivedReply(callID: envelope.callID, data: envelope.value)
@@ -512,7 +463,7 @@ extension WebSocketActorSystem {
         let taggedLogger = logger.withOp().with(actor.id)
         taggedLogger.trace("Call to: \(actor.id), target: \(target), target.identifier: \(target.identifier)")
 
-        let channel = try self.selectChannel(for: actor.id)
+        let channel = try await self.selectChannel(for: actor.id)
         taggedLogger.debug("channel: \(channel)")
 
         taggedLogger.trace("Prepare [\(target)] call...")
@@ -555,7 +506,7 @@ extension WebSocketActorSystem {
         let taggedLogger = logger.withOp().with(actor.id)
         taggedLogger.trace("Call to: \(actor.id), target: \(target), target.identifier: \(target.identifier)")
         
-        let channel = try selectChannel(for: actor.id)
+        let channel = try await selectChannel(for: actor.id)
 //        taggedLogger.debug("channel: \(channel)")
         
         let localInvocation = invocation
@@ -581,7 +532,7 @@ extension WebSocketActorSystem {
     
     
     
-    func write(channel: NIOAsyncChannel<WebSocketFrame, WebSocketFrame>, 
+    func write(channel: WebSocketAgentChannel, 
                envelope: WebSocketWireEnvelope) async throws {
         let taggedLogger = logger.withOp()
         taggedLogger.trace("unwrap WebSocketWireEnvelope")
@@ -615,29 +566,30 @@ extension WebSocketActorSystem {
 
     /// Return the Channel we should use to communicate with the given actor..
     /// Throws an exception if the actor is not reachable.
-    func selectChannel(for actorID: ActorID) throws -> NIOAsyncChannel<WebSocketFrame, WebSocketFrame> {
-        switch mode {
-        case .clientFor:
-            // On the client, any actor without a known NodeID is assumed to be on the server.
-            self.lock.lock()
-            defer { self.lock.unlock() }
-            return channel!
-            
-        case .serverOnly:
-            // On the server, we can only know where to send the message if the actor
-            // has a NodeID and we have a mapping from the NodeID to the Channel.
-            guard let nodeID = actorID.node else {
-                logger.error("The nodeID for remote actor \(actorID) is missing.")
-                throw WebSocketActorSystemError.missingNodeID(id: actorID)
-            }
-            self.lock.lock()
-            defer { self.lock.unlock() }
-            guard let channel = nodeRegistry.channel(for: nodeID) else {
-                logger.error("There is not currently a channel for nodeID \(nodeID)")
-                throw WebSocketActorSystemError.noChannelToNode(id: nodeID)
-            }
-            return channel
-        }
+    func selectChannel(for actorID: ActorID) async throws -> WebSocketAgentChannel {
+        return try await manager.selectChannel(for: actorID)
+//        switch mode {
+//        case .clientFor:
+//            // On the client, any actor without a known NodeID is assumed to be on the server.
+//            self.lock.lock()
+//            defer { self.lock.unlock() }
+//            return channel!
+//            
+//        case .serverOnly:
+//            // On the server, we can only know where to send the message if the actor
+//            // has a NodeID and we have a mapping from the NodeID to the Channel.
+//            guard let nodeID = actorID.node else {
+//                logger.error("The nodeID for remote actor \(actorID) is missing.")
+//                throw WebSocketActorSystemError.missingNodeID(id: actorID)
+//            }
+//            self.lock.lock()
+//            defer { self.lock.unlock() }
+//            guard let channel = nodeRegistry.channel(for: nodeID) else {
+//                logger.error("There is not currently a channel for nodeID \(nodeID)")
+//                throw WebSocketActorSystemError.noChannelToNode(id: nodeID)
+//            }
+//            return channel
+//        }
     }
 
     private func withCallIDContinuation<Act>(recipient: Act, body: (CallID) -> Void) async throws -> Data
@@ -665,7 +617,7 @@ public struct WebSocketActorSystemResultHandler: DistributedTargetInvocationResu
     let actorSystem: WebSocketActorSystem
     let callID: WebSocketActorSystem.CallID
     let system: WebSocketActorSystem
-    let channel: NIOAsyncChannel<WebSocketFrame, WebSocketFrame>
+    let channel: WebSocketAgentChannel
 
     public func onReturn<Success: Codable>(value: Success) async throws {
         system.logger.withOp().trace("Write to channel: \(channel)")

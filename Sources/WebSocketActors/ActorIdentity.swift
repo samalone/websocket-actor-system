@@ -109,7 +109,7 @@ extension ActorIdentity: Decodable {
            let nodeID = self.node,
            nodeID != system.nodeID {
             
-            guard let channel = decoder.userInfo[.channelKey] as? NIOAsyncChannel<WebSocketFrame, WebSocketFrame> else {
+            guard let channel = decoder.userInfo[.channelKey] as? WebSocketAgentChannel else {
                 fatalError("Unable to associate NodeID \(nodeID) with Channel, because .channelKey was not set on the Decoder.userInfo")
             }
             

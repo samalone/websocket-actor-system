@@ -32,7 +32,7 @@ struct RemoteNodeRegistry {
         }
     }
     
-    mutating func register(id: NodeIdentity, channel: NIOAsyncChannel<WebSocketFrame, WebSocketFrame>) {
+    mutating func register(id: NodeIdentity, channel: WebSocketAgentChannel) {
         if let rnc = byNodeID[id] {
             rnc.channel = channel
         }
@@ -41,7 +41,7 @@ struct RemoteNodeRegistry {
         }
     }
     
-    mutating func channelClosed(channel: NIOAsyncChannel<WebSocketFrame, WebSocketFrame>) {
+    mutating func channelClosed(channel: WebSocketAgentChannel) {
         for rnc in byNodeID.values {
             if rnc.channel?.channel === channel.channel {
                 rnc.channel = nil
@@ -49,7 +49,7 @@ struct RemoteNodeRegistry {
         }
     }
     
-    func channel(for nodeID: NodeIdentity) -> NIOAsyncChannel<WebSocketFrame, WebSocketFrame>? {
+    func channel(for nodeID: NodeIdentity) -> WebSocketAgentChannel? {
         guard let rnc = byNodeID[nodeID] else { return nil }
         return rnc.channel
     }
