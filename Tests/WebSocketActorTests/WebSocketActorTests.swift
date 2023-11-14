@@ -171,4 +171,37 @@ final class WebsocketActorSystemTests: XCTestCase {
         let greeting = try await serverAlice.introduceYourself()
         XCTAssertEqual(greeting, "Nice to meet you, Alice.")
     }
+    
+//    func testResilientTask() async throws {
+//        var retryCount = -1
+//        
+//        func monitor(status: ResilientTask.Status) {
+//            switch status {
+//            case .initializing:
+//                print("initializing")
+//            case .running:
+//                print("running")
+//            case .waiting(let delay):
+//                print("waiting \(delay) seconds")
+//            case .cancelled:
+//                print("cancelled")
+//            case .failed(let error):
+//                print("failed with \(error)")
+//            }
+//        }
+//        
+//        let action = ResilientTask(monitor: monitor) { initializationSuccessful in
+//            retryCount = (retryCount + 1) % 3
+//            print("retryCount = \(retryCount)")
+//            if retryCount > 0 {
+//                return
+//            }
+//            await initializationSuccessful()
+//            try await Task.sleep(for: .seconds(20))
+//        }
+//        
+//        try await Task.sleep(for: .seconds(120))
+//        
+//        action.cancel()
+//    }
 }
