@@ -231,16 +231,16 @@ extension WebSocketActorSystem {
         do {
             switch try await upgradeResult.get() {
             case .websocket(let websocketChannel):
-                print("Handling websocket connection")
+                logger.trace("Handling websocket connection")
                 try await self.handleWebsocketChannel(websocketChannel)
-                print("Done handling websocket connection")
+                logger.trace("Done handling websocket connection")
             case .notUpgraded(let httpChannel):
-                print("Handling HTTP connection")
+                logger.trace("Handling HTTP connection")
                 try await Self.handleHTTPChannel(httpChannel)
-                print("Done handling HTTP connection")
+                logger.trace("Done handling HTTP connection")
             }
         } catch {
-            print("Hit error: \(error)")
+            logger.error("Hit error: \(error)")
         }
     }
 

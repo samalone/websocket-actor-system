@@ -146,7 +146,7 @@ public final class WebSocketActorSystem: DistributedActorSystem,
                 // This is an unsolicited close. We're going to send a response frame and
                 // then, when we've sent it, close up shop. We should send back the close code the remote
                 // peer sent us, unless they didn't send one at all.
-                print("Received close")
+                logger.trace("Received close")
                 var data = frame.unmaskedData
                 let closeDataCode = data.readSlice(length: 2) ?? ByteBuffer()
                 let closeFrame = WebSocketFrame(fin: true, opcode: .connectionClose, data: closeDataCode)
@@ -161,7 +161,7 @@ public final class WebSocketActorSystem: DistributedActorSystem,
                                             on: channel)
             
             case .ping:
-                print("Received ping")
+                logger.trace("Received ping")
                 var frameData = frame.data
                 let maskingKey = frame.maskKey
                 
@@ -304,7 +304,7 @@ public final class WebSocketActorSystem: DistributedActorSystem,
             throw WebSocketActorSystemError.resolveFailedToMatchActorType(found: type(of: found), expected: Act.self)
         }
         
-        print("RESOLVED LOCAL: \(wellTyped)")
+        logger.trace("RESOLVED LOCAL: \(wellTyped)")
         return wellTyped
     }
 
