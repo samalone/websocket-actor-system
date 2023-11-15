@@ -25,63 +25,16 @@ import NIOFoundationCompat
 
 extension WebSocketActorSystem {
     
-    enum UpgradeResult {
-        case websocket(WebSocketAgentChannel)
-        case notUpgraded
-    }
-    
-    internal func openClientChannel(host: String, port: Int) async throws -> WebSocketAgentChannel {
-        let bootstrap = PlatformBootstrap(group: ClientManager.group)
-        let upgradeResult = try await bootstrap.connect(host: host, port: port) { channel in
-            channel.eventLoop.makeCompletedFuture {
-                let upgrader = NIOTypedWebSocketClientUpgrader<UpgradeResult> { channel, responseHead in
-                    return channel.eventLoop.makeCompletedFuture {
-                        let asyncChannel = try WebSocketAgentChannel(synchronouslyWrapping: channel)
-                        return UpgradeResult.websocket(asyncChannel)
-                    }
-                }
-                
-                var headers = HTTPHeaders()
-                headers.add(name: "Content-Type", value: "text/plain; charset=utf-8")
-                headers.add(name: "Content-Length", value: "0")
-                
-                let requestHead = HTTPRequestHead(
-                    version: .http1_1,
-                    method: .GET,
-                    uri: "/",
-                    headers: headers
-                )
-                
-                let clientUpgradeConfiguration = NIOTypedHTTPClientUpgradeConfiguration(
-                    upgradeRequestHead: requestHead,
-                    upgraders: [upgrader],
-                    notUpgradingCompletionHandler: { channel in
-                        channel.eventLoop.makeCompletedFuture {
-                            return UpgradeResult.notUpgraded
-                        }
-                    }
-                )
-                
-                let negotiationResultFuture = try channel.pipeline.syncOperations.configureUpgradableHTTPClientPipeline(
-                    configuration: .init(upgradeConfiguration: clientUpgradeConfiguration)
-                )
-                
-                return negotiationResultFuture
-            }
+    private actor ClientManager: Manager {
+        
+        enum UpgradeResult {
+            case websocket(WebSocketAgentChannel)
+            case notUpgraded
         }
         
-        switch try await upgradeResult.get() {
-        case .websocket(let channel):
-            return channel
-        case .notUpgraded:
-            throw WebSocketActorSystemError.failedToUpgrade
-        }
-    }
-    
-    public actor ClientManager: Manager {
         private let system: WebSocketActorSystem
-        private var _task: ResilientTask?
-        var channel: WebSocketAgentChannel?
+        private var task: ResilientTask?
+        private var channel: WebSocketAgentChannel?
         private var waitingForChannel: [CheckedContinuation<WebSocketAgentChannel, Error>] = []
         
 #if canImport(Network)
@@ -92,10 +45,6 @@ extension WebSocketActorSystem {
         
         init(system: WebSocketActorSystem) {
             self.system = system
-        }
-        
-        var task: ResilientTask {
-            _task!
         }
         
         func localPort() async throws -> Int {
@@ -115,10 +64,6 @@ extension WebSocketActorSystem {
             }
         }
         
-        func setTask(_ task: ResilientTask) {
-            self._task = task
-        }
-        
         func setChannel(_ channel: WebSocketAgentChannel) {
             self.channel = channel
             for waiter in waitingForChannel {
@@ -135,20 +80,73 @@ extension WebSocketActorSystem {
             }
         }
         
-        func cancel() async {
-            _task?.cancel()
+        func connect(host: String, port: Int) {
+            cancel()
+            task = ResilientTask() { initialized in
+                let channel = try await Self.openClientChannel(host: host, port: port)
+                self.setChannel(channel)
+                await initialized()
+                try await self.system.dispatchIncomingFrames(channel: channel)
+            }
+        }
+        
+        func cancel() {
+            task?.cancel()
+            task = nil
+        }
+        
+        private static func openClientChannel(host: String, port: Int) async throws -> WebSocketAgentChannel {
+            let bootstrap = PlatformBootstrap(group: ClientManager.group)
+            let upgradeResult = try await bootstrap.connect(host: host, port: port) { channel in
+                channel.eventLoop.makeCompletedFuture {
+                    let upgrader = NIOTypedWebSocketClientUpgrader<UpgradeResult> { channel, responseHead in
+                        return channel.eventLoop.makeCompletedFuture {
+                            let asyncChannel = try WebSocketAgentChannel(synchronouslyWrapping: channel)
+                            return UpgradeResult.websocket(asyncChannel)
+                        }
+                    }
+                    
+                    var headers = HTTPHeaders()
+                    headers.add(name: "Content-Type", value: "text/plain; charset=utf-8")
+                    headers.add(name: "Content-Length", value: "0")
+                    
+                    let requestHead = HTTPRequestHead(
+                        version: .http1_1,
+                        method: .GET,
+                        uri: "/",
+                        headers: headers
+                    )
+                    
+                    let clientUpgradeConfiguration = NIOTypedHTTPClientUpgradeConfiguration(
+                        upgradeRequestHead: requestHead,
+                        upgraders: [upgrader],
+                        notUpgradingCompletionHandler: { channel in
+                            channel.eventLoop.makeCompletedFuture {
+                                return UpgradeResult.notUpgraded
+                            }
+                        }
+                    )
+                    
+                    let negotiationResultFuture = try channel.pipeline.syncOperations.configureUpgradableHTTPClientPipeline(
+                        configuration: .init(upgradeConfiguration: clientUpgradeConfiguration)
+                    )
+                    
+                    return negotiationResultFuture
+                }
+            }
+            
+            switch try await upgradeResult.get() {
+            case .websocket(let channel):
+                return channel
+            case .notUpgraded:
+                throw WebSocketActorSystemError.failedToUpgrade
+            }
         }
     }
     
-    internal func createClientManager(host: String, port: Int) async -> ClientManager {
+    internal func createClientManager(host: String, port: Int) async -> Manager {
         let manager = ClientManager(system: self)
-        let task = ResilientTask() { initialized in
-            let channel = try await self.openClientChannel(host: host, port: port)
-            await manager.setChannel(channel)
-            await initialized()
-            try await self.dispatchIncomingFrames(channel: channel)
-        }
-        await manager.setTask(task)
+        await manager.connect(host: host, port: port)
         return manager
     }
 }
