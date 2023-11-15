@@ -101,7 +101,7 @@ public final class WebSocketActorSystem: DistributedActorSystem,
 //    private var channel: WebSocketAgentChannel?
     
     var mode: WebSocketActorSystemMode
-    private var manager: Manager = StubManager()
+    private var manager: Manager!
 
     // === On-Demand resolve handler
 
@@ -128,10 +128,8 @@ public final class WebSocketActorSystem: DistributedActorSystem,
         logger.info("\(Self.self) initialized in mode: \(mode)")
     }
     
-    public var localPort: Int {
-        get async {
-            await manager.localPort
-        }
+    public func localPort() async throws -> Int {
+        try await manager.localPort()
     }
     
     func dispatchIncomingFrames(channel: WebSocketAgentChannel) async throws {

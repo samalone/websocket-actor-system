@@ -50,7 +50,7 @@ public struct ResilientTask {
     public init(backoff: ExponentialBackoff = .standard,
                 monitor: MonitorFunction? = nil,
                 action: @escaping Action) {
-        task = Task {
+        task = Task.detached {
             var iterator = backoff.makeIterator()
             while !Task.isCancelled {
                 do {

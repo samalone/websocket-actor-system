@@ -82,6 +82,7 @@ extension WebSocketActorSystem {
         private let system: WebSocketActorSystem
         private var _task: ResilientTask?
         var channel: WebSocketAgentChannel?
+        private var waitingForChannel: [CheckedContinuation<WebSocketAgentChannel, Error>] = []
         
 #if canImport(Network)
         static let group = NIOTSEventLoopGroup.singleton
@@ -97,7 +98,7 @@ extension WebSocketActorSystem {
             _task!
         }
         
-        var localPort: Int {
+        func localPort() async throws -> Int {
             channel?.channel.localAddress?.port ?? 0
         }
         
@@ -106,10 +107,12 @@ extension WebSocketActorSystem {
         }
         
         func selectChannel(for actorID: ActorIdentity) async throws -> WebSocketAgentChannel {
-            guard let channel = channel else {
-                throw WebSocketActorSystemError.noChannelToNode(id: actorID.node ?? NodeIdentity(id: "unknown"))
+            // Use a continuation to wait for the channel to be set.
+            try await withCheckedThrowingContinuation { continuation in
+                Task {
+                    resolveChannel(continuation: continuation)
+                }
             }
-            return channel
         }
         
         func setTask(_ task: ResilientTask) {
@@ -118,6 +121,18 @@ extension WebSocketActorSystem {
         
         func setChannel(_ channel: WebSocketAgentChannel) {
             self.channel = channel
+            for waiter in waitingForChannel {
+                waiter.resume(returning: channel)
+            }
+            waitingForChannel.removeAll()
+        }
+        
+        private func resolveChannel(continuation: CheckedContinuation<WebSocketAgentChannel, Error>) {
+            if let channel {
+                continuation.resume(returning: channel)
+            } else {
+                waitingForChannel.append(continuation)
+            }
         }
         
         func cancel() async {

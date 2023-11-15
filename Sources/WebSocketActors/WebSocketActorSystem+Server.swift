@@ -39,26 +39,36 @@ let websocketResponse = """
 </html>
 """
 
+/// A `Manager` is an actor protocol that provides the `WebSocketActorSystem`
+/// with a uniform interface to clients and servers, so that certain universal
+/// operations can be performed without caring which mode the actor system is in.
 protocol Manager {
-    var localPort: Int { get async }
+    
+    /// Return the local port number. For the server, this is the port it is listening on.
+    /// For a client, this is the (less important) local port number it is connecting from.
+    ///
+    /// - Note: Even for a server, the`localPort()` is only needed
+    /// when the server was created on port 0, which uses a system-assigned port.
+    /// This is normally the case only when writing tests. In production, the server
+    /// is usually created on a fixed port number and calls to `localPort()` are not needed.
+    func localPort() async throws -> Int
+    
+    /// The `Manager` should associate the given `nodeID` with the given `channel`.
+    /// Only servers need to implement this, since a client only has a single connection.
     func associate(nodeID: NodeIdentity, with channel: WebSocketAgentChannel) async
+    
+    /// Select a channel to the given `actorID`. This function is only called for remote actors.
+    /// Clients can simply return their current channel, while servers need to look up the
+    /// channel associated with the actor's node ID.
     func selectChannel(for actorID: ActorIdentity) async throws -> WebSocketAgentChannel
+    
+    /// Close all channels and stop re-opening them. This is called when the actor system
+    /// wants to shut down.
     func cancel() async
 }
 
-struct StubManager: Manager {
-    var localPort: Int = 0
-    
-    func associate(nodeID: NodeIdentity, with channel: WebSocketAgentChannel) async {
-    }
-    
-    func selectChannel(for actorID: ActorIdentity) async throws -> WebSocketAgentChannel {
-        throw WebSocketActorSystemError.noChannelToNode(id: actorID.node ?? NodeIdentity(id: "unknown"))
-    }
-    
-    func cancel() async {
-    }
-}
+/// The channel type the server uses to listen for new client connections.
+typealias ServerMasterChannel = NIOAsyncChannel<EventLoopFuture<WebSocketActorSystem.ServerUpgradeResult>, Never>
 
 extension WebSocketActorSystem {
     private static let responseBody = ByteBuffer(string: websocketResponse)
@@ -68,7 +78,7 @@ extension WebSocketActorSystem {
         case notUpgraded(NIOAsyncChannel<HTTPServerRequestPart, HTTPPart<HTTPResponseHead, ByteBuffer>>)
     }
     
-    func openServerChannel(host: String, port: Int) async throws -> NIOAsyncChannel<EventLoopFuture<WebSocketActorSystem.ServerUpgradeResult>, Never> {
+    func openServerChannel(host: String, port: Int) async throws -> ServerMasterChannel {
         try await ServerBootstrap(group: MultiThreadedEventLoopGroup.singleton)
             .serverChannelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
             .bind(
@@ -111,19 +121,17 @@ extension WebSocketActorSystem {
     public actor ServerManager: Manager {
         private let system: WebSocketActorSystem
         private var _task: ResilientTask?
-        private var _channel: NIOAsyncChannel<EventLoopFuture<WebSocketActorSystem.ServerUpgradeResult>, Never>?
+        private var _channel: ServerMasterChannel?
         private var nodeRegistry = RemoteNodeRegistry()
-        private let channelReady = DispatchSemaphore(value: 0)
+        private var waitingForChannel: [CheckedContinuation<ServerMasterChannel, Error>] = []
         
         init(system: WebSocketActorSystem) {
             self.system = system
         }
         
-        public var localPort: Int {
-            get {
-//                channelReady.wait()
-                return _channel?.channel.localAddress?.port ?? 0
-            }
+        func localPort() async throws -> Int {
+            let chan = try await requireChannel()
+            return chan.channel.localAddress?.port ?? 0
         }
         
         func associate(nodeID: NodeIdentity, with channel: WebSocketAgentChannel) {
@@ -147,14 +155,28 @@ extension WebSocketActorSystem {
             self._task = task
         }
         
-//        internal func setChannelInternal(_ channel: NIOAsyncChannel<EventLoopFuture<WebSocketActorSystem.ServerUpgradeResult>, Never>) {
-//            _channel = channel
-//        }
-        
-//        nonisolated
-        internal func setChannel(_ channel: NIOAsyncChannel<EventLoopFuture<WebSocketActorSystem.ServerUpgradeResult>, Never>) async {
+        internal func setChannel(_ channel: ServerMasterChannel) async {
             _channel = channel
-//            channelReady.signal()
+            for waiter in waitingForChannel {
+                waiter.resume(returning: channel)
+            }
+            waitingForChannel.removeAll()
+        }
+        
+        internal func resolveChannel(continuation: CheckedContinuation<ServerMasterChannel, Error>) {
+            if let channel = _channel {
+                continuation.resume(returning: channel)
+            } else {
+                waitingForChannel.append(continuation)
+            }
+        }
+        
+        internal func requireChannel() async throws  -> ServerMasterChannel {
+            try await withCheckedThrowingContinuation { continuation in
+                Task {
+                    resolveChannel(continuation: continuation)
+                }
+            }
         }
         
         public func cancel() {
