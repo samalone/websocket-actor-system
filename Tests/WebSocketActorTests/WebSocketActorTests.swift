@@ -81,7 +81,6 @@ extension Logger {
 
 final class WebsocketActorSystemTests: XCTestCase {
     var server: WebSocketActorSystem!
-    var serverTask: WebSocketActorSystem.ServerManager!
     
     override func setUp() async throws {
         server = try await WebSocketActorSystem(mode: .serverOnly(host: "localhost", port: 0),
