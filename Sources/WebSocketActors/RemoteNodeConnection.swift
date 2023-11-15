@@ -1,5 +1,5 @@
 //
-//  File 2.swift
+//  RemoteNodeConnection.swift
 //  
 //
 //  Created by Stuart A. Malone on 11/6/23.

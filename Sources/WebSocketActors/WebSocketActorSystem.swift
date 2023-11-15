@@ -84,8 +84,6 @@ public final class WebSocketActorSystem: DistributedActorSystem,
 
     // === Handle replies
     public typealias CallID = UUID
-    private let replyLock = NSLock()
-    private var inFlightCalls: [CallID: CheckedContinuation<Data, Error>] = [:]
     
     private var pendingReplies = PendingReplies()
 
@@ -566,46 +564,6 @@ extension WebSocketActorSystem {
     /// Throws an exception if the actor is not reachable.
     func selectChannel(for actorID: ActorID) async throws -> WebSocketAgentChannel {
         return try await manager.selectChannel(for: actorID)
-//        switch mode {
-//        case .clientFor:
-//            // On the client, any actor without a known NodeID is assumed to be on the server.
-//            self.lock.lock()
-//            defer { self.lock.unlock() }
-//            return channel!
-//            
-//        case .serverOnly:
-//            // On the server, we can only know where to send the message if the actor
-//            // has a NodeID and we have a mapping from the NodeID to the Channel.
-//            guard let nodeID = actorID.node else {
-//                logger.error("The nodeID for remote actor \(actorID) is missing.")
-//                throw WebSocketActorSystemError.missingNodeID(id: actorID)
-//            }
-//            self.lock.lock()
-//            defer { self.lock.unlock() }
-//            guard let channel = nodeRegistry.channel(for: nodeID) else {
-//                logger.error("There is not currently a channel for nodeID \(nodeID)")
-//                throw WebSocketActorSystemError.noChannelToNode(id: nodeID)
-//            }
-//            return channel
-//        }
-    }
-
-    private func withCallIDContinuation<Act>(recipient: Act, body: (CallID) -> Void) async throws -> Data
-    where Act: DistributedActor {
-        let taggedLogger = logger.withOp()
-        let data = try await withCheckedThrowingContinuation { continuation in
-            let callID = UUID()
-            
-            self.replyLock.lock()
-            self.inFlightCalls[callID] = continuation
-            self.replyLock.unlock()
-            
-            taggedLogger.trace("Stored callID:[\(callID)], waiting for reply...")
-            body(callID)
-        }
-        
-        taggedLogger.trace("Resumed call, data: \(String(data: data, encoding: .utf8)!)")
-        return data
     }
 }
 
@@ -624,14 +582,12 @@ public struct WebSocketActorSystemResultHandler: DistributedTargetInvocationResu
         let returnValue = try encoder.encode(value)
         let envelope = WebSocketReplyEnvelope(callID: self.callID, sender: nil, value: returnValue)
         try await actorSystem.write(channel: channel, envelope: WebSocketWireEnvelope.reply(envelope))
-//        try await channel.channel.writeAndFlush(WebSocketWireEnvelope.reply(envelope))
     }
 
     public func onReturnVoid() async throws {
         system.logger.withOp().trace("Write to channel: \(channel)")
         let envelope = WebSocketReplyEnvelope(callID: self.callID, sender: nil, value: "".data(using: .utf8)!)
         try await actorSystem.write(channel: channel, envelope: WebSocketWireEnvelope.reply(envelope))
-//        try await channel.channel.writeAndFlush(WebSocketWireEnvelope.reply(envelope))
     }
 
     public func onThrow<Err: Error>(error: Err) async throws {
@@ -641,25 +597,6 @@ public struct WebSocketActorSystemResultHandler: DistributedTargetInvocationResu
         // or error of a thrown value as it may contain information which should never leave the node.
         let envelope = WebSocketReplyEnvelope(callID: self.callID, sender: nil, value: "".data(using: .utf8)!)
         try await actorSystem.write(channel: channel, envelope: WebSocketWireEnvelope.reply(envelope))
-//        try await channel.channel.writeAndFlush(WebSocketWireEnvelope.reply(envelope))
-    }
-}
-
-// ==== ----------------------------------------------------------------------------------------------------------------
-// - MARK: Reply handling
-
-extension WebSocketActorSystem {
-    func sendReply(_ envelope: WebSocketReplyEnvelope, on channel: Channel) throws {
-        lock.lock()
-        defer {
-            self.lock.unlock()
-        }
-
-        // let encoder = JSONEncoder()
-        // let data = try encoder.encode(envelope)
-
-        logger.withOp().trace("Sending reply to [\(envelope.callID)]: envelope: \(envelope), on channel: \(channel)")
-        _ = channel.writeAndFlush(envelope)
     }
 }
 
