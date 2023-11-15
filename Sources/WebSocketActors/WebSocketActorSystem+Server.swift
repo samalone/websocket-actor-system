@@ -109,11 +109,15 @@ extension WebSocketActorSystem {
     }
     
     public actor ServerManager: Manager {
+        private let system: WebSocketActorSystem
         private var _task: ResilientTask?
         private var _channel: NIOAsyncChannel<EventLoopFuture<WebSocketActorSystem.ServerUpgradeResult>, Never>?
         private var nodeRegistry = RemoteNodeRegistry()
         private let channelReady = DispatchSemaphore(value: 0)
         
+        init(system: WebSocketActorSystem) {
+            self.system = system
+        }
         
         public var localPort: Int {
             get {
@@ -123,16 +127,17 @@ extension WebSocketActorSystem {
         }
         
         func associate(nodeID: NodeIdentity, with channel: WebSocketAgentChannel) {
+            system.logger.notice("associating \(nodeID) with channel")
             nodeRegistry.register(id: nodeID, channel: channel)
         }
         
         func selectChannel(for actorID: ActorIdentity) async throws -> WebSocketAgentChannel {
             guard let nodeID = actorID.node else {
-//                logger.error("The nodeID for remote actor \(actorID) is missing.")
+                system.logger.error("The nodeID for remote actor \(actorID) is missing.")
                 throw WebSocketActorSystemError.missingNodeID(id: actorID)
             }
             guard let channel = nodeRegistry.channel(for: nodeID) else {
-//                logger.error("There is not currently a channel for nodeID \(nodeID)")
+                system.logger.error("There is not currently a channel for nodeID \(nodeID)")
                 throw WebSocketActorSystemError.noChannelToNode(id: nodeID)
             }
             return channel
@@ -142,14 +147,14 @@ extension WebSocketActorSystem {
             self._task = task
         }
         
-        internal func setChannelInternal(_ channel: NIOAsyncChannel<EventLoopFuture<WebSocketActorSystem.ServerUpgradeResult>, Never>) {
-            _channel = channel
-        }
+//        internal func setChannelInternal(_ channel: NIOAsyncChannel<EventLoopFuture<WebSocketActorSystem.ServerUpgradeResult>, Never>) {
+//            _channel = channel
+//        }
         
-        nonisolated
+//        nonisolated
         internal func setChannel(_ channel: NIOAsyncChannel<EventLoopFuture<WebSocketActorSystem.ServerUpgradeResult>, Never>) async {
-            await self.setChannelInternal(channel)
-            channelReady.signal()
+            _channel = channel
+//            channelReady.signal()
         }
         
         public func cancel() {
@@ -159,7 +164,7 @@ extension WebSocketActorSystem {
     }
     
     internal func createServerManager(host: String, port: Int) async -> ServerManager {
-        let server = ServerManager()
+        let server = ServerManager(system: self)
         await server.setTask(ResilientTask() { initialized in
             let channel = try await self.openServerChannel(host: host, port: port)
             await server.setChannel(channel)

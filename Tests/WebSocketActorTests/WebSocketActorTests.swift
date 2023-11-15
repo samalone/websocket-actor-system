@@ -121,7 +121,7 @@ final class WebsocketActorSystemTests: XCTestCase {
         let client = try await WebSocketActorSystem(mode: .clientFor(server: NodeAddress(scheme: "ws", host: "localhost", port: server.localPort)),
                                           logger: Logger(label: "\(name) client").with(level: .trace))
     
-//        try await Task.sleep(for: .seconds(1))
+        try await Task.sleep(for: .seconds(1))
         
         // Create the real Alice on the server
         let serverAlice = server.makeActor(id: .alice) {
@@ -145,8 +145,11 @@ final class WebsocketActorSystemTests: XCTestCase {
     }
     
     func testServerPush() async throws {
+        try await Task.sleep(for: .seconds(1))
         let client = try await WebSocketActorSystem(mode: .clientFor(server: NodeAddress(scheme: "ws", host: "localhost", port: server.localPort)),
                                           logger: Logger(label: "\(name) client").with(level: .trace))
+        
+        try await Task.sleep(for: .seconds(1))
         
         // Create the real Alice on the server
         let serverAlice = server.makeActor(id: .alice) {

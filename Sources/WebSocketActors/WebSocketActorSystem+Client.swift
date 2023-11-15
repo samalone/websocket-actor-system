@@ -79,6 +79,7 @@ extension WebSocketActorSystem {
     }
     
     public actor ClientManager: Manager {
+        private let system: WebSocketActorSystem
         private var _task: ResilientTask?
         var channel: WebSocketAgentChannel?
         
@@ -87,6 +88,10 @@ extension WebSocketActorSystem {
 #else
         static let group = MultiThreadedEventLoopGroup.singleton
 #endif
+        
+        init(system: WebSocketActorSystem) {
+            self.system = system
+        }
         
         var task: ResilientTask {
             _task!
@@ -121,7 +126,7 @@ extension WebSocketActorSystem {
     }
     
     internal func createClientManager(host: String, port: Int) async -> ClientManager {
-        let manager = ClientManager()
+        let manager = ClientManager(system: self)
         let task = ResilientTask() { initialized in
             let channel = try await self.openClientChannel(host: host, port: port)
             await manager.setChannel(channel)
