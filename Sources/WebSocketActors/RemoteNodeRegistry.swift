@@ -21,7 +21,7 @@ import NIOWebSocket
 struct RemoteNodeRegistry {
     var byNodeID: Dictionary<NodeIdentity, RemoteNodeConnection> = [:]
     
-    mutating func register(id: NodeIdentity, address: NodeAddress) {
+    mutating func register(id: NodeIdentity, address: ServerAddress) {
         if let rnc = byNodeID[id] {
             // We don't allow re-registration of a node at a different address,
             // so just confirm that the address has not changed.
@@ -54,7 +54,7 @@ struct RemoteNodeRegistry {
         return rnc.channel
     }
     
-    func address(for nodeID: NodeIdentity) -> NodeAddress? {
+    func address(for nodeID: NodeIdentity) -> ServerAddress? {
         guard let rnc = byNodeID[nodeID] else { return nil }
         return rnc.address
     }

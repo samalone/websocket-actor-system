@@ -81,11 +81,14 @@ extension Logger {
 
 final class WebsocketActorSystemTests: XCTestCase {
     var server: WebSocketActorSystem!
+    var serverAddress = ServerAddress(scheme: .insecure, host: "localhost", port: 0)
     
     override func setUp() async throws {
-        server = try await WebSocketActorSystem(mode: .serverOnly(host: "localhost", port: 0),
+        server = try await WebSocketActorSystem(mode: .server(at: serverAddress),
                                           id: .server,
                                           logger: Logger(label: "\(name) server").with(level: .trace))
+        // Now that the server is started, we can find out what port number it is using.
+        serverAddress = try await server.address()
     }
     
     override func tearDown() async throws {
@@ -117,8 +120,8 @@ final class WebsocketActorSystemTests: XCTestCase {
     
     func testRemoteCalls() async throws {
 //        try await Task.sleep(for: .seconds(1))
-        let client = try await WebSocketActorSystem(mode: .clientFor(server: NodeAddress(scheme: "ws", host: "localhost", port: server.localPort())),
-                                          logger: Logger(label: "\(name) client").with(level: .trace))
+        let client = try await WebSocketActorSystem(mode: .client(of: serverAddress),
+                                                    logger: Logger(label: "\(name) client").with(level: .trace))
     
 //        try await Task.sleep(for: .seconds(1))
         
@@ -145,8 +148,8 @@ final class WebsocketActorSystemTests: XCTestCase {
     
     func testServerPush() async throws {
 //        try await Task.sleep(for: .seconds(1))
-        let client = try await WebSocketActorSystem(mode: .clientFor(server: NodeAddress(scheme: "ws", host: "localhost", port: server.localPort())),
-                                          logger: Logger(label: "\(name) client").with(level: .trace))
+        let client = try await WebSocketActorSystem(mode: .client(of: serverAddress),
+                                                    logger: Logger(label: "\(name) client").with(level: .trace))
         
 //        try await Task.sleep(for: .seconds(1))
         

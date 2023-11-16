@@ -15,13 +15,13 @@ class RemoteNodeConnection: Identifiable, Hashable, Equatable {
     
     /// The address to connect or reconnect to the remote node.
     /// `nil` if the remote node does not have an fixed address (as with a mobile client).
-    let address: NodeAddress?
+    let address: ServerAddress?
     
     /// The current communications channel to the remote node, or nil
     /// if the connection has been lost.
     var channel: WebSocketAgentChannel?
     
-    init(id: NodeIdentity, address: NodeAddress? = nil, channel: WebSocketAgentChannel? = nil) {
+    init(id: NodeIdentity, address: ServerAddress? = nil, channel: WebSocketAgentChannel? = nil) {
         self.id = id
         self.address = address
         self.channel = channel

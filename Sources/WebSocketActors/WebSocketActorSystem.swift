@@ -41,12 +41,12 @@ internal struct RemoteWebSocketCallEnvelope: Sendable, Codable {
 internal typealias WebSocketAgentChannel = NIOAsyncChannel<WebSocketFrame, WebSocketFrame>
 
 public enum WebSocketActorSystemMode {
-    case clientFor(server: NodeAddress)
-    case serverOnly(host: String, port: Int)
+    case client(of: ServerAddress)
+    case server(at: ServerAddress)
 
     var isClient: Bool {
         switch self {
-        case .clientFor:
+        case .client:
             return true
         default:
             return false
@@ -55,7 +55,7 @@ public enum WebSocketActorSystemMode {
 
     var isServer: Bool {
         switch self {
-        case .serverOnly:
+        case .server:
             return true
         default:
             return false
@@ -116,10 +116,10 @@ public final class WebSocketActorSystem: DistributedActorSystem,
         
         // Start networking
         switch mode {
-        case .clientFor(let serverAddress):
+        case .client(let serverAddress):
             self.manager = await createClientManager(host: serverAddress.host, port: serverAddress.port)
-        case .serverOnly(let host, let port):
-            self.manager = await createServerManager(host: host, port: port)
+        case .server(let address):
+            self.manager = await createServerManager(on: address)
 //            logger.info("server listening on port \(localPort)")
         }
         
@@ -128,6 +128,15 @@ public final class WebSocketActorSystem: DistributedActorSystem,
     
     public func localPort() async throws -> Int {
         try await manager.localPort()
+    }
+    
+    public func address() async throws -> ServerAddress {
+        switch mode {
+        case .client(let serverAddress):
+            return serverAddress
+        case .server(let address):
+            return try await address.with(port: manager.localPort())
+        }
     }
     
     func dispatchIncomingFrames(channel: WebSocketAgentChannel) async throws {
