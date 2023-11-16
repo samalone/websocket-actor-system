@@ -8,6 +8,7 @@ Wrappers around Logging package to add metadata automatically.
 import Foundation
 import Logging
 
+/// Internal utilities for adding metadata to loggers.
 extension Logger {
     func with(_ actorID: ActorIdentity) -> Logger {
         var logger = self
@@ -24,6 +25,12 @@ extension Logger {
     func with(_ mode: WebSocketActorSystemMode) -> Logger {
         var logger = self
         logger[metadataKey: "system"] = .string("\(mode)")
+        return logger
+    }
+    
+    func with(_ callID: CallID) -> Logger {
+        var logger = self
+        logger[metadataKey: "callID"] = .stringConvertible(callID)
         return logger
     }
     

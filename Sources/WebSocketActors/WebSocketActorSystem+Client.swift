@@ -144,9 +144,9 @@ extension WebSocketActorSystem {
         }
     }
     
-    internal func createClientManager(host: String, port: Int) async -> Manager {
+    internal func createClientManager(to address: ServerAddress) async -> Manager {
         let manager = ClientManager(system: self)
-        await manager.connect(host: host, port: port)
+        await manager.connect(host: address.host, port: address.port)
         return manager
     }
 }

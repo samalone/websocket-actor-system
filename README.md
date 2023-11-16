@@ -29,30 +29,70 @@ to the target dependencies of your package target.
 
 ## Getting started
 
-To use the `WebSocketActorSystem` you will need to create both a server and a client.
+To use the `WebSocketActorSystem` you will need to create a server, a client, and a library that they share.
+
+### Library
+
+The library contains all of the distributed actors that will be shared between the clients and the server.
+
+The server will usually contain at least one actor with a fixed ID that acts as a "receptionist", giving clients access to other actors on the server.
+
+```swift
+extension ActorIdentity {
+    // Since there is only one receptionist, declare its fixed id
+    // so clients know how to refer to it.
+    public static let receptionist: ActorIdentity = "receptionist"
+}
+
+public distributed actor Receptionist {
+    typealias ActorSystem = WebSocketActorSystem
+
+    init(actorSystem: ActorSystem) {
+        self.actorSystem = actorSystem
+    }
+}
+```
 
 ### Server
 
 ```swift
 @main
 struct Server {
-    static func main() {
-        let system = try! WebSocketActorSystem(mode: .serverOnly(host: "localhost", port: 8888))
-        
-        system.registerOnDemandResolveHandler { id in
-            // We create new BotPlayers "ad-hoc" as they are requested for.
-            // Subsequent resolves are able to resolve the same instance.
-            if system.isBotID(id) {
-                return system.makeActorWithID(id) {
-                    Counter(actorSystem: system)
-                }
-            }
-            
-            return nil // don't resolve on-demand
+    static func main() async throws {
+        let serverAddress = ServerAddress(scheme: .insecure, host: "localhost", port: 8888)
+        let server = try await WebSocketActorSystem(mode: .server(at: serverAddress), id: "server")
+
+        let receptionist = server.makeActor(id: .receptionist) {
+            Receptionist(actorSystem: server)
         }
         
-        Thread.sleep(forTimeInterval: 100_000)
+        try await Task.sleep(for: .seconds(100_000))
     }
+}
+```
+
+### Client
+
+```swift
+@main
+struct Client {
+    static func main() async throws {
+        // The public address of the server. If the server is behind
+        // a proxy or inside a Docker container, this may be different
+        // from the internal server address. 
+        let serverAddress = ServerAddress(scheme: .insecure, host: "localhost", port: 8888)
+
+        // It is important to NOT specify a fixed client ID, so that each
+        // client will be assigned a unique random ID.
+        let client = try await WebSocketActorSystem(mode: .client(of: serverAddress))
+
+        let receptionist = server.makeActor(id: .receptionist) {
+            Receptionist(actorSystem: server)
+        }
+        
+        try await Task.sleep(for: .seconds(100_000))
+    }
+
 }
 ```
 

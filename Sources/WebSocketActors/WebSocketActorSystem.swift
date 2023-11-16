@@ -18,27 +18,29 @@ import Logging
     import NIOPosix
 #endif
 
-internal enum WebSocketWireEnvelope: Sendable, Codable {
+typealias CallID = UUID
+
+enum WebSocketWireEnvelope: Sendable, Codable {
     case call(RemoteWebSocketCallEnvelope)
     case reply(WebSocketReplyEnvelope)
     case connectionClose
 }
 
-internal struct WebSocketReplyEnvelope: Sendable, Codable {
-    let callID: WebSocketActorSystem.CallID
+struct WebSocketReplyEnvelope: Sendable, Codable {
+    let callID: CallID
     let sender: WebSocketActorSystem.ActorID?
     let value: Data
 }
 
-internal struct RemoteWebSocketCallEnvelope: Sendable, Codable {
-    let callID: WebSocketActorSystem.CallID
+struct RemoteWebSocketCallEnvelope: Sendable, Codable {
+    let callID: CallID
     let recipient: ActorIdentity
     let invocationTarget: String
     let genericSubs: [String]
     let args: [Data]
 }
 
-internal typealias WebSocketAgentChannel = NIOAsyncChannel<WebSocketFrame, WebSocketFrame>
+typealias WebSocketAgentChannel = NIOAsyncChannel<WebSocketFrame, WebSocketFrame>
 
 public enum WebSocketActorSystemMode {
     case client(of: ServerAddress)
@@ -81,9 +83,6 @@ public final class WebSocketActorSystem: DistributedActorSystem,
     private var managedActors: [ActorID: any DistributedActor] = [:]
     public let nodeID: NodeIdentity
     public let logger: Logger
-
-    // === Handle replies
-    public typealias CallID = UUID
     
     private var pendingReplies = PendingReplies()
 
@@ -116,14 +115,14 @@ public final class WebSocketActorSystem: DistributedActorSystem,
         
         // Start networking
         switch mode {
-        case .client(let serverAddress):
-            self.manager = await createClientManager(host: serverAddress.host, port: serverAddress.port)
+        case .client(let address):
+            self.manager = await createClientManager(to: address)
+            logger.info("client connected to \(address)")
         case .server(let address):
-            self.manager = await createServerManager(on: address)
-//            logger.info("server listening on port \(localPort)")
+            self.manager = await createServerManager(at: address)
+            let realAddress = try await self.address()
+            logger.info("server listening at \(realAddress)")
         }
-        
-        logger.info("\(Self.self) initialized in mode: \(mode)")
     }
     
     public func localPort() async throws -> Int {
@@ -580,12 +579,12 @@ public struct WebSocketActorSystemResultHandler: DistributedTargetInvocationResu
     public typealias SerializationRequirement = any Codable
 
     let actorSystem: WebSocketActorSystem
-    let callID: WebSocketActorSystem.CallID
+    let callID: CallID
     let system: WebSocketActorSystem
     let channel: WebSocketAgentChannel
 
     public func onReturn<Success: Codable>(value: Success) async throws {
-        system.logger.withOp().trace("Write to channel: \(channel)")
+        system.logger.withOp().with(callID).trace("returning \(value)")
         let encoder = JSONEncoder()
         encoder.userInfo[.actorSystemKey] = actorSystem
         let returnValue = try encoder.encode(value)
@@ -594,13 +593,13 @@ public struct WebSocketActorSystemResultHandler: DistributedTargetInvocationResu
     }
 
     public func onReturnVoid() async throws {
-        system.logger.withOp().trace("Write to channel: \(channel)")
+        system.logger.withOp().with(callID).trace("returning Void")
         let envelope = WebSocketReplyEnvelope(callID: self.callID, sender: nil, value: "".data(using: .utf8)!)
         try await actorSystem.write(channel: channel, envelope: WebSocketWireEnvelope.reply(envelope))
     }
 
     public func onThrow<Err: Error>(error: Err) async throws {
-        system.logger.withOp().trace("onThrow: \(error)")
+        system.logger.withOp().with(callID).trace("throwing \(error)")
         // Naive best-effort carrying the error name back to the caller;
         // Always be careful when exposing error information -- especially do not ship back the entire description
         // or error of a thrown value as it may contain information which should never leave the node.

@@ -36,6 +36,12 @@ extension NodeIdentity: Codable {
     }
 }
 
+extension NodeIdentity: ExpressibleByStringLiteral {
+    public init(stringLiteral value: String) {
+        self.id = value
+    }
+}
+
 extension CodingUserInfoKey {
-    public static let channelKey = CodingUserInfoKey(rawValue: "channel")!
+    static let channelKey = CodingUserInfoKey(rawValue: "channel")!
 }

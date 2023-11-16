@@ -47,10 +47,6 @@ distributed actor Person {
     }
 }
 
-extension NodeIdentity {
-    static let server = NodeIdentity(id: "server")
-}
-
 extension ActorIdentity {
     static let alice = ActorIdentity(id: "alice")
     static let bob = ActorIdentity(id: "bob")
@@ -85,7 +81,7 @@ final class WebsocketActorSystemTests: XCTestCase {
     
     override func setUp() async throws {
         server = try await WebSocketActorSystem(mode: .server(at: serverAddress),
-                                          id: .server,
+                                          id: "server",
                                           logger: Logger(label: "\(name) server").with(level: .trace))
         // Now that the server is started, we can find out what port number it is using.
         serverAddress = try await server.address()

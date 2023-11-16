@@ -9,9 +9,8 @@ import Foundation
 import Logging
 
 internal actor PendingReplies {
-    typealias CallID = UUID
     
-    private var callContinuations: Dictionary<UUID, CheckedContinuation<Data, Error>> = [:]
+    private var callContinuations: Dictionary<CallID, CheckedContinuation<Data, Error>> = [:]
     
     func expectReply(continuation: CheckedContinuation<Data, Error>) -> UUID {
         let callID = UUID()
@@ -19,14 +18,14 @@ internal actor PendingReplies {
         return callID
     }
     
-    func receivedReply(callID: UUID, data: Data) throws {
+    func receivedReply(callID: CallID, data: Data) throws {
         guard let continuation = callContinuations.removeValue(forKey: callID) else {
             throw WebSocketActorSystemError.missingReplyContinuation(callID: callID)
         }
         continuation.resume(returning: data)
     }
     
-    func receivedError(callID: UUID, error: Error) throws {
+    func receivedError(callID: CallID, error: Error) throws {
         guard let continuation = callContinuations.removeValue(forKey: callID) else {
             throw WebSocketActorSystemError.missingReplyContinuation(callID: callID)
         }
