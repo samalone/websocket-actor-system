@@ -42,6 +42,12 @@ extension NodeIdentity: ExpressibleByStringLiteral {
     }
 }
 
+extension NodeIdentity: CustomStringConvertible {
+    public var description: String {
+        id.description
+    }
+}
+
 extension CodingUserInfoKey {
     static let channelKey = CodingUserInfoKey(rawValue: "channel")!
 }

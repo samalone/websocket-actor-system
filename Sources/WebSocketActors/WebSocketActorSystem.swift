@@ -65,6 +65,34 @@ public enum WebSocketActorSystemMode {
     }
 }
 
+/// A distributed actor system that uses WebSockets to allow multiple clients
+/// to communicate with a single server.
+///
+/// ## Logging
+///
+/// The `WebSocketActorSystem` uses [swift-log](https://github.com/apple/swift-log)
+/// to output debugging information. You can control the level of detail and destination of this logging
+/// by customizing the `logger` parameter to the ``init(mode:id:logger:)`` function, or by
+/// modifying the ``defaultLogger`` static property before you create your ``WebSocketActorSystem``.
+///
+/// This library outputs at these log levels. Later levels include earlier levels.
+///
+/// - term `.critical`: Errors encountered inside the actor system that may not
+///   be recoverable.
+/// - term `.error`: Incorrect use of the distributed actor system by the application,
+///   such as using the same id for multiple objects.
+/// - term `.warning`: Recoverable errors encountered inside the actor system, such as network errors.
+/// - term `.notice`: Information about client connections and disconnections.
+/// - term `.info`: Information about distributed function calls. Note that this level does not
+///   include function arguments or return values.
+/// - term `.debug`: Additional information about function call arguments,
+///   return values, and thrown exceptions. Note that this may include private data,
+///   so you should not enable this level of logging unless you are troubleshooting a problem.
+/// - term `.trace`: Detailed information about the internals of the ``WebSocketActors``
+///   implementation.
+///
+/// 
+
 public final class WebSocketActorSystem: DistributedActorSystem,
     @unchecked /* state protected with locks */ Sendable {
 
@@ -85,28 +113,12 @@ public final class WebSocketActorSystem: DistributedActorSystem,
     public let logger: Logger
     
     private var pendingReplies = PendingReplies()
-
-    // ==== Channels
-//    let group: EventLoopGroup
-    
-    /// The channel the server is listening on for new client connections.
-    /// This may change over time if there are network errors and the channel
-    /// has to be re-opened.
-//    private var serverChannel: NIOAsyncChannel<EventLoopFuture<ServerUpgradeResult>, Never>?
-    
-    /// The client's channel to the server.
-//    private var channel: WebSocketAgentChannel?
     
     var mode: WebSocketActorSystemMode
     private var manager: Manager!
 
-    // === On-Demand resolve handler
-
     typealias OnDemandResolveHandler = (ActorID) -> (any DistributedActor)?
     private var resolveOnDemandHandler: OnDemandResolveHandler? = nil
-
-    // === Configuration
-//    public let mode: WebSocketActorSystemMode
 
     public init(mode: WebSocketActorSystemMode, id: NodeIdentity = .random(), logger: Logger = defaultLogger) async throws {
         self.nodeID = id
@@ -236,7 +248,7 @@ public final class WebSocketActorSystem: DistributedActorSystem,
 
     /// Register the actor as a local actor.
     public func actorReady<Act>(_ actor: Act) where Act: DistributedActor, ActorID == Act.ID {
-        logger.info("actorReady", metadata: ["actorID": .stringConvertible(actor.id)])
+        logger.with(actor.id).trace("actorReady")
 
         if !Self.alreadyLocked {
             lock.lock()
@@ -252,7 +264,7 @@ public final class WebSocketActorSystem: DistributedActorSystem,
 
     /// Unregister the actors as a local actor.
     public func resignID(_ id: ActorID) {
-        logger.info("resignID", metadata: ["actorID": .stringConvertible(id)])
+        logger.with(id).trace("resignID")
         lock.lock()
         defer {
             lock.unlock()
@@ -281,28 +293,28 @@ public final class WebSocketActorSystem: DistributedActorSystem,
         let taggedLogger = logger.with(id).withOp()
         
         guard let found = managedActors[id] else {
-            taggedLogger.debug("not found locally")
+            taggedLogger.trace("not found locally")
             if let resolveOnDemand = self.resolveOnDemandHandler {
-                taggedLogger.debug("resolve on demand")
+                taggedLogger.trace("resolve on demand")
                 
                 let resolvedOnDemandActor = Self.$alreadyLocked.withValue(true) {
                     resolveOnDemand(id)
                 }
                 if let resolvedOnDemandActor = resolvedOnDemandActor {
-                    taggedLogger.debug("attempt to resolve on-demand as \(resolvedOnDemandActor)")
+                    taggedLogger.trace("attempt to resolve on-demand as \(resolvedOnDemandActor)")
                     if let wellTyped = resolvedOnDemandActor as? Act {
-                        taggedLogger.debug("resolved on-demand as \(Act.self)")
+                        taggedLogger.trace("resolved on-demand as \(Act.self)")
                         return wellTyped
                     } else {
                         taggedLogger.error("resolved on demand, but wrong type: \(type(of: resolvedOnDemandActor))")
                         throw WebSocketActorSystemError.resolveFailed(id: id)
                     }
                 } else {
-                    taggedLogger.notice("resolve on demand")
+                    taggedLogger.trace("resolve on demand")
                 }
             }
             
-            taggedLogger.info("resolved as remote")
+            taggedLogger.trace("resolved as remote")
             return nil // definitely remote, we don't know about this ActorID
         }
         
@@ -321,27 +333,27 @@ public final class WebSocketActorSystem: DistributedActorSystem,
         let taggedLogger = logger.with(id).withOp()
 
         guard let resolved = managedActors[id] else {
-            taggedLogger.debug("here")
+            taggedLogger.trace("here")
             if let resolveOnDemand = self.resolveOnDemandHandler {
-                taggedLogger.debug("got handler")
+                taggedLogger.trace("got handler")
                 return Self.$alreadyLocked.withValue(true) {
                     if let resolvedOnDemandActor = resolveOnDemand(id) {
-                        taggedLogger.debug("Resolved ON DEMAND as \(resolvedOnDemandActor)")
+                        taggedLogger.trace("Resolved ON DEMAND as \(resolvedOnDemandActor)")
                         return resolvedOnDemandActor
                     } else {
-                        taggedLogger.debug("not resolved")
+                        taggedLogger.trace("not resolved")
                         return nil
                     }
                 }
             } else {
-                taggedLogger.debug("no resolveOnDemandHandler")
+                taggedLogger.trace("no resolveOnDemandHandler")
             }
 
-            taggedLogger.debug("definitely remote")
+            taggedLogger.trace("definitely remote")
             return nil // definitely remote, we don't know about this ActorID
         }
 
-        taggedLogger.info("resolved as \(resolved)")
+        taggedLogger.trace("resolved as \(resolved)")
         return resolved
     }
 
@@ -408,20 +420,21 @@ extension WebSocketActorSystem {
     }
 
     func receiveInboundCall(envelope: RemoteWebSocketCallEnvelope, on channel: WebSocketAgentChannel) {
-        let taggedLogger = logger.withOp()
-        taggedLogger.trace("Envelope: \(envelope)")
+        let taggedLogger = logger.withOp().with(envelope)
+        taggedLogger.info("receiveInboundCall")
+        taggedLogger.with(envelope.args).debug("args")
         Task {
             taggedLogger.trace("Calling resolveAny(id: \(envelope.recipient))")
             guard let anyRecipient = resolveAny(id: envelope.recipient, resolveReceptionist: true) else {
                 taggedLogger.warning("failed to resolve \(envelope.recipient)")
                 return
             }
-            taggedLogger.debug("Recipient: \(anyRecipient)")
+            taggedLogger.trace("Recipient: \(anyRecipient)")
             let target = RemoteCallTarget(envelope.invocationTarget)
-            taggedLogger.debug("Target: \(target)")
-            taggedLogger.debug("Target.identifier: \(target.identifier)")
+            taggedLogger.trace("Target: \(target)")
+            taggedLogger.trace("Target.identifier: \(target.identifier)")
             let handler = ResultHandler(actorSystem: self, callID: envelope.callID, system: self, channel: channel)
-            taggedLogger.debug("Handler: \(anyRecipient)")
+            taggedLogger.trace("Handler: \(anyRecipient)")
 
             do {
                 var decoder = Self.InvocationDecoder(system: self, envelope: envelope, channel: channel)
@@ -447,8 +460,8 @@ extension WebSocketActorSystem {
     }
 
     func receiveInboundReply(envelope: WebSocketReplyEnvelope, on channel: WebSocketAgentChannel) async throws {
-        let taggedLogger = logger.withOp()
-        taggedLogger.trace("Reply envelope: \(envelope)")
+        let taggedLogger = logger.withOp().with(envelope.callID).with(sender: envelope.sender)
+        taggedLogger.info("receiveInboundReply")
         try await pendingReplies.receivedReply(callID: envelope.callID, data: envelope.value)
     }
 }
@@ -464,11 +477,12 @@ extension WebSocketActorSystem {
         throwing: Err.Type,
         returning: Res.Type
     ) async throws -> Res where Act: DistributedActor, Act.ID == ActorID, Err: Error, Res: Codable {
-        let taggedLogger = logger.withOp().with(actor.id)
+        let taggedLogger = logger.withOp().with(actor.id).with(target)
+        taggedLogger.info("remoteCall")
         taggedLogger.trace("Call to: \(actor.id), target: \(target), target.identifier: \(target.identifier)")
 
         let channel = try await self.selectChannel(for: actor.id)
-        taggedLogger.debug("channel: \(channel)")
+        taggedLogger.trace("channel: \(channel)")
 
         taggedLogger.trace("Prepare [\(target)] call...")
         
@@ -484,7 +498,7 @@ extension WebSocketActorSystem {
             )
             let wireEnvelope = WebSocketWireEnvelope.call(callEnvelope)
 
-            taggedLogger.debug("Write envelope: \(wireEnvelope)")
+            taggedLogger.trace("Write envelope: \(wireEnvelope)")
             
 //            let frame = WebSocketFrame(opcode: .text, data: try JSONEncoder().encode(wireEnvelope))
             
@@ -511,7 +525,7 @@ extension WebSocketActorSystem {
         taggedLogger.trace("Call to: \(actor.id), target: \(target), target.identifier: \(target.identifier)")
         
         let channel = try await selectChannel(for: actor.id)
-//        taggedLogger.debug("channel: \(channel)")
+//        taggedLogger.trace("channel: \(channel)")
         
         let localInvocation = invocation
         
@@ -526,7 +540,7 @@ extension WebSocketActorSystem {
             )
             let wireEnvelope = WebSocketWireEnvelope.call(callEnvelope)
             
-            taggedLogger.debug("Write envelope: \(wireEnvelope)")
+            taggedLogger.trace("Write envelope: \(wireEnvelope)")
             
             try await self.write(channel: channel, envelope: wireEnvelope)
         }

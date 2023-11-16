@@ -70,6 +70,16 @@ protocol Manager {
 /// The channel type the server uses to listen for new client connections.
 typealias ServerMasterChannel = NIOAsyncChannel<EventLoopFuture<WebSocketActorSystem.ServerUpgradeResult>, Never>
 
+extension WebSocketAgentChannel {
+    var remoteDescription: String {
+        "\(channel.remoteAddress?.description ?? "unknown")"
+    }
+    
+    var localDescription: String {
+        "\(channel.localAddress?.description ?? "unknown")"
+    }
+}
+
 extension WebSocketActorSystem {
     private static let responseBody = ByteBuffer(string: websocketResponse)
     
@@ -246,6 +256,8 @@ extension WebSocketActorSystem {
 
     
     private func handleWebsocketChannel(_ channel: WebSocketAgentChannel) async throws {
+        let taggedLogger = logger.withOp().with(channel)
+        taggedLogger.info("new client connection")
         
         try await withThrowingTaskGroup(of: Void.self) { group in
             group.addTask {
@@ -255,6 +267,8 @@ extension WebSocketActorSystem {
             try await group.next()
             group.cancelAll()
         }
+        
+        taggedLogger.info("client connection closed")
     }
     
     internal func closeOnError(channel: WebSocketAgentChannel) async {
