@@ -10,6 +10,7 @@ import Foundation
 import NIO
 import NIOHTTP1
 import NIOWebSocket
+import NIOAsyncWebSockets
 
 // ==== ----------------------------------------------------------------------------------------------------------------
 // - MARK: Server-side networking stack

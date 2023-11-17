@@ -11,6 +11,7 @@ import NIO
 import NIOHTTP1
 import NIOWebSocket
 import NIOFoundationCompat
+import NIOAsyncWebSockets
 
 #if canImport(Network)
     import NIOTransportServices
