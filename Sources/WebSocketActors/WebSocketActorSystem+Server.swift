@@ -195,7 +195,7 @@ extension WebSocketActorSystem {
                     port: port
                 ) { channel in
                     channel.eventLoop.makeCompletedFuture {
-                        let upgrader = NIOTypedWebSocketServerUpgrader<ServerUpgradeResult>(
+                        let upgrader = NIOAsyncWebSockets.NIOTypedWebSocketServerUpgrader<ServerUpgradeResult>(
                             shouldUpgrade: { (channel, head) in
                                 channel.eventLoop.makeSucceededFuture(HTTPHeaders())
                             },

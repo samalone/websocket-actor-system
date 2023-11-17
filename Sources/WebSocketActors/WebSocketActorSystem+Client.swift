@@ -100,7 +100,7 @@ extension WebSocketActorSystem {
             let bootstrap = PlatformBootstrap(group: ClientManager.group)
             let upgradeResult = try await bootstrap.connect(host: host, port: port) { channel in
                 channel.eventLoop.makeCompletedFuture {
-                    let upgrader = NIOTypedWebSocketClientUpgrader<UpgradeResult> { channel, responseHead in
+                    let upgrader = NIOAsyncWebSockets.NIOTypedWebSocketClientUpgrader<UpgradeResult> { channel, responseHead in
                         return channel.eventLoop.makeCompletedFuture {
                             let asyncChannel = try WebSocketAgentChannel(synchronouslyWrapping: channel)
                             return UpgradeResult.websocket(asyncChannel)
