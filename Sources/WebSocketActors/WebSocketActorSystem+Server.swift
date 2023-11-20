@@ -59,8 +59,6 @@ protocol Manager {
     /// channel associated with the actor's node ID.
     func remoteNode(for nodeID: ActorIdentity) async throws -> RemoteNode
     
-    func write(envelope: WebSocketWireEnvelope, to nodeID: NodeIdentity) async throws
-    
     /// Close all channels and stop re-opening them. This is called when the actor system
     /// wants to shut down.
     func cancel() async
@@ -76,10 +74,6 @@ extension WebSocketAgentChannel {
     var remoteDescription: String {
         "\(channel.remoteAddress?.description ?? "unknown")"
     }
-    
-    var localDescription: String {
-        "\(channel.localAddress?.description ?? "unknown")"
-    }
 }
 
 extension WebSocketActorSystem {
@@ -94,7 +88,7 @@ extension WebSocketActorSystem {
         private let system: WebSocketActorSystem
         private var _task: ResilientTask?
         private var _channel: ServerMasterChannel?
-        private var waitingForChannel: [CheckedContinuation<ServerMasterChannel, Error>] = []
+        private var waitingForChannel: [CheckedContinuation<ServerMasterChannel, Never>] = []
         private var remoteNodes: [NodeIdentity: Status] = [:]
         
         enum Status {
@@ -119,12 +113,7 @@ extension WebSocketActorSystem {
             return await requireRemoteNode(nodeID: nodeID)
         }
         
-        func write(envelope: WebSocketWireEnvelope, to nodeID: NodeIdentity) async throws {
-            let remoteNode = await requireRemoteNode(nodeID: nodeID)
-            try await remoteNode.write(actorSystem: system, envelope: envelope)
-        }
-        
-        private func setChannel(_ channel: ServerMasterChannel) async {
+        private func setChannel(_ channel: ServerMasterChannel) {
             _channel = channel
             for waiter in waitingForChannel {
                 waiter.resume(returning: channel)
@@ -132,18 +121,13 @@ extension WebSocketActorSystem {
             waitingForChannel.removeAll()
         }
         
-        internal func resolveChannel(continuation: CheckedContinuation<ServerMasterChannel, Error>) {
-            if let channel = _channel {
-                continuation.resume(returning: channel)
-            } else {
-                waitingForChannel.append(continuation)
-            }
-        }
-        
         internal func requireChannel() async throws  -> ServerMasterChannel {
-            try await withCheckedThrowingContinuation { continuation in
-                Task {
-                    resolveChannel(continuation: continuation)
+            if let channel = _channel {
+                return channel
+            }
+            else {
+                return await withCheckedContinuation { continuation in
+                    waitingForChannel.append(continuation)
                 }
             }
         }
@@ -170,7 +154,7 @@ extension WebSocketActorSystem {
             }
         }
         
-        func opened(remote: RemoteNode) async {
+        func opened(remote: RemoteNode) {
             let nodeID = remote.nodeID
             if let status = remoteNodes[nodeID], case let .future(continuations) = status {
                 remoteNodes[nodeID] = .current(remote)
@@ -183,7 +167,7 @@ extension WebSocketActorSystem {
             }
         }
         
-        func closing(remote: RemoteNode) async {
+        func closing(remote: RemoteNode) {
             remoteNodes.removeValue(forKey: remote.nodeID)
         }
         
@@ -199,7 +183,7 @@ extension WebSocketActorSystem {
                 
                 try await TaskPath.with(name: "server connection") {
                     let channel = try await self.openServerChannel(host: host, port: port)
-                    await self.setChannel(channel)
+                    self.setChannel(channel)
                     
                     await initialized()
                     
@@ -356,7 +340,7 @@ extension WebSocketActorSystem {
                     return
                 }
                 
-                guard let remoteNodeID = head.headers.nodeID else {
+                guard head.headers.nodeID != nil else {
                     try await Self.respond405(writer: outbound)
                     return
                 }

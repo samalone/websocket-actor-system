@@ -47,27 +47,6 @@ extension WebSocketActorSystem {
     
     private actor ClientManager: Manager {
         
-        func remoteNode(for actorID: ActorIdentity) async throws -> RemoteNode {
-            if let remoteNode {
-                return remoteNode
-            }
-            else {
-                return await withCheckedContinuation { continuation in
-                    Task {
-                        waitingForRemoteNode.append(continuation)
-                    }
-                }
-            }
-        }
-        
-        func write(envelope: WebSocketWireEnvelope, to nodeID: NodeIdentity) async throws {
-            guard let remoteNode else {
-                system.logger.critical("No remoteNode for nodeID \(nodeID)")
-                throw WebSocketActorSystemError.noRemoteNode(id: nodeID)
-            }
-            try await remoteNode.write(actorSystem: system, envelope: envelope)
-        }
-        
         enum UpgradeResult {
             case websocket(ServerConnection)
             case notUpgraded
@@ -75,9 +54,7 @@ extension WebSocketActorSystem {
         
         private let system: WebSocketActorSystem
         private var task: ResilientTask?
-        private var serverConnection: ServerConnection? = nil
         private var remoteNode: RemoteNode? = nil
-        private var waitingForChannel: [CheckedContinuation<WebSocketAgentChannel, Error>] = []
         private var waitingForRemoteNode: [CheckedContinuation<RemoteNode, Never>] = []
         
 #if canImport(Network)
@@ -99,29 +76,12 @@ extension WebSocketActorSystem {
             remoteNode?.channel.channel.localAddress?.port ?? 0
         }
         
-        func setServerConnection(_ connection: ServerConnection) {
-            self.serverConnection = connection
-            for waiter in waitingForChannel {
-                waiter.resume(returning: connection.channel)
-            }
-            waitingForChannel.removeAll()
-        }
-        
-        private func resolveChannel(continuation: CheckedContinuation<WebSocketAgentChannel, Error>) {
-            if let serverConnection {
-                continuation.resume(returning: serverConnection.channel)
-            } else {
-                waitingForChannel.append(continuation)
-            }
-        }
-        
         func connect(host: String, port: Int) {
             cancel()
             task = ResilientTask() { initialized in
                 try await TaskPath.with(name: "client connection") {
                     let serverConnection = try await self.openClientChannel(host: host, port: port)
                     self.system.logger.trace("got serverConnection to node \(serverConnection.nodeID) on \(TaskPath.current)")
-                    self.setServerConnection(serverConnection)
                     await initialized()
                     try await self.system.dispatchIncomingFrames(channel: serverConnection.channel, remoteNodeID: serverConnection.nodeID)
                 }
@@ -138,6 +98,19 @@ extension WebSocketActorSystem {
         
         func closing(remote: RemoteNode) async {
             self.remoteNode = nil
+        }
+        
+        func remoteNode(for actorID: ActorIdentity) async throws -> RemoteNode {
+            if let remoteNode {
+                return remoteNode
+            }
+            else {
+                return await withCheckedContinuation { continuation in
+                    Task {
+                        waitingForRemoteNode.append(continuation)
+                    }
+                }
+            }
         }
         
         func cancel() {

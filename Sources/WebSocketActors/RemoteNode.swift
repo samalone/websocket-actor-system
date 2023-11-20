@@ -44,7 +44,6 @@ final class RemoteNode {
         case .reply, .call:
             let encoder = JSONEncoder()
             encoder.userInfo[.actorSystemKey] = actorSystem
-            encoder.userInfo[.remoteNodeKey] = self
 
             var data = ByteBuffer()
             try data.writeJSONEncodable(envelope, encoder: encoder)

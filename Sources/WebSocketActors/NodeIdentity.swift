@@ -47,7 +47,3 @@ extension NodeIdentity: CustomStringConvertible {
         id.description
     }
 }
-
-extension CodingUserInfoKey {
-    static let remoteNodeKey = CodingUserInfoKey(rawValue: "remoteNode")!
-}

@@ -46,27 +46,7 @@ typealias WebSocketOutbound = NIOAsyncChannelOutboundWriter<WebSocketFrame>
 public enum WebSocketActorSystemMode {
     case client(of: ServerAddress)
     case server(at: ServerAddress)
-
-    var isClient: Bool {
-        switch self {
-        case .client:
-            return true
-        default:
-            return false
-        }
-    }
-
-    var isServer: Bool {
-        switch self {
-        case .server:
-            return true
-        default:
-            return false
-        }
-    }
 }
-
-
 
 /// A distributed actor system that uses WebSockets to allow multiple clients
 /// to communicate with a single server.
@@ -182,8 +162,7 @@ public final class WebSocketActorSystem: DistributedActorSystem,
                         let text = data.getString(at: 0, length: data.readableBytes) ?? ""
                         self.logger.withOp().trace("Received: \(text), from: \(String(describing: channel.channel.remoteAddress))")
                         
-                        await self.decodeAndDeliver(data: &data, from: channel.channel.remoteAddress,
-                                                    on: remoteNode)
+                        await self.decodeAndDeliver(data: &data, from: remoteNode)
                         
                     case .ping:
                         logger.trace("Received ping")
@@ -327,7 +306,7 @@ public final class WebSocketActorSystem: DistributedActorSystem,
         return wellTyped
     }
 
-    func resolveAny(id: ActorID, resolveReceptionist: Bool = false) -> (any DistributedActor)? {
+    func resolveAny(id: ActorID) -> (any DistributedActor)? {
         lock.lock()
         defer { lock.unlock() }
         
@@ -395,8 +374,7 @@ extension WebSocketActorSystem {
 }
 
 extension WebSocketActorSystem {
-    func decodeAndDeliver(data: inout ByteBuffer, from address: SocketAddress?,
-                          on remote: RemoteNode) async {
+    func decodeAndDeliver(data: inout ByteBuffer, from remote: RemoteNode) async {
         let decoder = JSONDecoder()
         decoder.userInfo[.actorSystemKey] = self
         
@@ -410,7 +388,7 @@ extension WebSocketActorSystem {
                 // log("receive-decode-deliver", "Decode remoteCall...")
                 self.receiveInboundCall(envelope: remoteCallEnvelope, on: remote)
             case .reply(let replyEnvelope):
-                try await self.receiveInboundReply(envelope: replyEnvelope, on: remote)
+                try await self.receiveInboundReply(envelope: replyEnvelope)
             case .none, .connectionClose:
                 taggedLogger.error("Failed decoding: \(data); decoded empty")
             }
@@ -426,7 +404,7 @@ extension WebSocketActorSystem {
         taggedLogger.with(envelope.args).debug("args")
         Task {
             taggedLogger.trace("Calling resolveAny(id: \(envelope.recipient))")
-            guard let anyRecipient = resolveAny(id: envelope.recipient, resolveReceptionist: true) else {
+            guard let anyRecipient = resolveAny(id: envelope.recipient) else {
                 taggedLogger.warning("failed to resolve \(envelope.recipient)")
                 return
             }
@@ -438,7 +416,7 @@ extension WebSocketActorSystem {
             taggedLogger.trace("Handler: \(anyRecipient)")
 
             do {
-                var decoder = Self.InvocationDecoder(system: self, envelope: envelope, remote: remote)
+                var decoder = Self.InvocationDecoder(system: self, envelope: envelope)
                 func doExecuteDistributedTarget<Act: DistributedActor>(recipient: Act) async throws {
                     taggedLogger.trace("executeDistributedTarget")
                     try await executeDistributedTarget(
@@ -460,7 +438,7 @@ extension WebSocketActorSystem {
         }
     }
 
-    func receiveInboundReply(envelope: WebSocketReplyEnvelope, on remote: RemoteNode) async throws {
+    func receiveInboundReply(envelope: WebSocketReplyEnvelope) async throws {
         let taggedLogger = logger.withOp().with(envelope.callID).with(sender: envelope.sender)
         taggedLogger.info("receiveInboundReply")
         try await pendingReplies.receivedReply(callID: envelope.callID, data: envelope.value)

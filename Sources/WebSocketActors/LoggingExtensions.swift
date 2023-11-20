@@ -16,27 +16,9 @@ import Logging
 /// a [logging backend](https://github.com/apple/swift-log#selecting-a-logging-backend-implementation-applications-only)
 /// that provides more structure than the default `StreamLogHandler`.
 extension Logger {
-    func with(_ nodeID: NodeIdentity) -> Logger {
-        var logger = self
-        logger[metadataKey: "nodeID"] = .stringConvertible(nodeID)
-        return logger
-    }
-    
     func with(_ actorID: ActorIdentity) -> Logger {
         var logger = self
         logger[metadataKey: "actorID"] = .stringConvertible(actorID)
-        return logger
-    }
-    
-    func with(_ system: WebSocketActorSystem) -> Logger {
-        var logger = self
-        logger[metadataKey: "system"] = .string("\(system.mode)")
-        return logger
-    }
-    
-    func with(_ mode: WebSocketActorSystemMode) -> Logger {
-        var logger = self
-        logger[metadataKey: "system"] = .string("\(mode)")
         return logger
     }
     
@@ -49,12 +31,6 @@ extension Logger {
     func with(_ channel: WebSocketAgentChannel) -> Logger {
         var logger = self
         logger[metadataKey: "channel"] = .string(channel.remoteDescription)
-        return logger
-    }
-    
-    func with(op: String) -> Logger {
-        var logger = self
-        logger[metadataKey: "op"] = .string(op)
         return logger
     }
     
