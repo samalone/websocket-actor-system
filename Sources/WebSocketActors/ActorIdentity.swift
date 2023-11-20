@@ -101,19 +101,5 @@ extension ActorIdentity: Decodable {
         self.id = try values.decode(String.self, forKey: .id)
         self.node = try values.decodeIfPresent(NodeIdentity.self, forKey: .node)
         self.type = try values.decodeIfPresent(String.self, forKey: .type)
-        
-        // When decoding, if we see a NodeID that does not match the local WebSocketActorSystem,
-        // tell the system to associate that node with the current Channel we are decoding.
-        // This allows us to send messages to the remote actor later.
-        if let system = decoder.userInfo[.actorSystemKey] as? WebSocketActorSystem,
-           let nodeID = self.node,
-           nodeID != system.nodeID {
-            
-            guard let channel = decoder.userInfo[.channelKey] as? WebSocketAgentChannel else {
-                fatalError("Unable to associate NodeID \(nodeID) with Channel, because .channelKey was not set on the Decoder.userInfo")
-            }
-            
-            system.associate(nodeID: nodeID, with: channel)
-        }
     }
 }

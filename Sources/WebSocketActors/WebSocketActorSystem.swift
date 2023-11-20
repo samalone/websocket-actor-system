@@ -41,6 +41,7 @@ struct RemoteWebSocketCallEnvelope: Sendable, Codable {
 }
 
 typealias WebSocketAgentChannel = NIOAsyncChannel<WebSocketFrame, WebSocketFrame>
+typealias WebSocketOutbound = NIOAsyncChannelOutboundWriter<WebSocketFrame>
 
 public enum WebSocketActorSystemMode {
     case client(of: ServerAddress)
@@ -64,6 +65,8 @@ public enum WebSocketActorSystemMode {
         }
     }
 }
+
+
 
 /// A distributed actor system that uses WebSockets to allow multiple clients
 /// to communicate with a single server.
@@ -90,8 +93,7 @@ public enum WebSocketActorSystemMode {
 ///   so you should not enable this level of logging unless you are troubleshooting a problem.
 /// - term `.trace`: Detailed information about the internals of the ``WebSocketActors``
 ///   implementation.
-///
-/// 
+
 
 public final class WebSocketActorSystem: DistributedActorSystem,
     @unchecked /* state protected with locks */ Sendable {
@@ -150,63 +152,62 @@ public final class WebSocketActorSystem: DistributedActorSystem,
         }
     }
     
-    func dispatchIncomingFrames(channel: WebSocketAgentChannel) async throws {
-        for try await frame in channel.inbound {
-            switch frame.opcode {
-            case .connectionClose:
-                // Close the connection.
-                //
-                // We might also want to inform the actor system that this connection
-                // went away, so it can terminate any tasks or actors working to
-                // inform the remote receptionist on the now-gone system about our
-                // actors.
-                
-                // This is an unsolicited close. We're going to send a response frame and
-                // then, when we've sent it, close up shop. We should send back the close code the remote
-                // peer sent us, unless they didn't send one at all.
-                logger.trace("Received close")
-                var data = frame.unmaskedData
-                let closeDataCode = data.readSlice(length: 2) ?? ByteBuffer()
-                let closeFrame = WebSocketFrame(fin: true, opcode: .connectionClose, data: closeDataCode)
-                try await channel.outbound.write(closeFrame)
-                
-            case .text:
-                var data = frame.unmaskedData
-                let text = data.getString(at: 0, length: data.readableBytes) ?? ""
-                self.logger.withOp().trace("Received: \(text), from: \(String(describing: channel.channel.remoteAddress))")
-                
-                await self.decodeAndDeliver(data: &data, from: channel.channel.remoteAddress,
-                                            on: channel)
+    func dispatchIncomingFrames(channel: WebSocketAgentChannel, remoteNodeID: NodeIdentity) async throws {
+        try await RemoteNode.withRemoteNode(nodeID: remoteNodeID, channel: channel) { remoteNode in
+            logger.trace("opened remoteNode for \(mode) on \(TaskPath.current)")
+            await manager.opened(remote: remoteNode)
             
-            case .ping:
-                logger.trace("Received ping")
-                var frameData = frame.data
-                let maskingKey = frame.maskKey
-                
-                if let maskingKey = maskingKey {
-                    frameData.webSocketUnmask(maskingKey)
+            try await TaskPath.with(name: "remoteNode") {
+                for try await frame in remoteNode.inbound {
+                    switch frame.opcode {
+                    case .connectionClose:
+                        // Close the connection.
+                        //
+                        // We might also want to inform the actor system that this connection
+                        // went away, so it can terminate any tasks or actors working to
+                        // inform the remote receptionist on the now-gone system about our
+                        // actors.
+                        
+                        // This is an unsolicited close. We're going to send a response frame and
+                        // then, when we've sent it, close up shop. We should send back the close code the remote
+                        // peer sent us, unless they didn't send one at all.
+                        logger.trace("Received close")
+                        var data = frame.unmaskedData
+                        let closeDataCode = data.readSlice(length: 2) ?? ByteBuffer()
+                        let closeFrame = WebSocketFrame(fin: true, opcode: .connectionClose, data: closeDataCode)
+                        try await remoteNode.outbound.write(closeFrame)
+                        
+                    case .text:
+                        var data = frame.unmaskedData
+                        let text = data.getString(at: 0, length: data.readableBytes) ?? ""
+                        self.logger.withOp().trace("Received: \(text), from: \(String(describing: channel.channel.remoteAddress))")
+                        
+                        await self.decodeAndDeliver(data: &data, from: channel.channel.remoteAddress,
+                                                    on: remoteNode)
+                        
+                    case .ping:
+                        logger.trace("Received ping")
+                        var frameData = frame.data
+                        let maskingKey = frame.maskKey
+                        
+                        if let maskingKey = maskingKey {
+                            frameData.webSocketUnmask(maskingKey)
+                        }
+                        
+                        let responseFrame = WebSocketFrame(fin: true, opcode: .pong, data: frameData)
+                        try await remoteNode.outbound.write(responseFrame)
+                        
+                    case .binary, .continuation, .pong:
+                        // We ignore these frames.
+                        break
+                    default:
+                        // Unknown frames are errors.
+                        await self.closeOnError(channel: channel)
+                    }
                 }
-                
-                let responseFrame = WebSocketFrame(fin: true, opcode: .pong, data: frameData)
-                try await channel.outbound.write(responseFrame)
-                
-            case .binary, .continuation, .pong:
-                // We ignore these frames.
-                break
-            default:
-                // Unknown frames are errors.
-                await self.closeOnError(channel: channel)
             }
-        }
-    }
-    
-    func associate(nodeID: NodeIdentity, with channel: WebSocketAgentChannel) {
-        // TODO: I don't like using a background task here.
-        // to associate the NodeIdentity with
-        // the channel, but this function is called from synchronous code,
-        // and channels are created and dropped asynchronously.
-        Task {
-            await manager.associate(nodeID: nodeID, with: channel)
+            logger.trace("closing remoteNode for \(mode) on \(TaskPath.current)")
+            await manager.closing(remote: remoteNode)
         }
     }
     
@@ -395,7 +396,7 @@ extension WebSocketActorSystem {
 
 extension WebSocketActorSystem {
     func decodeAndDeliver(data: inout ByteBuffer, from address: SocketAddress?,
-                          on channel: WebSocketAgentChannel) async {
+                          on remote: RemoteNode) async {
         let decoder = JSONDecoder()
         decoder.userInfo[.actorSystemKey] = self
         
@@ -407,9 +408,9 @@ extension WebSocketActorSystem {
             switch wireEnvelope {
             case .call(let remoteCallEnvelope):
                 // log("receive-decode-deliver", "Decode remoteCall...")
-                self.receiveInboundCall(envelope: remoteCallEnvelope, on: channel)
+                self.receiveInboundCall(envelope: remoteCallEnvelope, on: remote)
             case .reply(let replyEnvelope):
-                try await self.receiveInboundReply(envelope: replyEnvelope, on: channel)
+                try await self.receiveInboundReply(envelope: replyEnvelope, on: remote)
             case .none, .connectionClose:
                 taggedLogger.error("Failed decoding: \(data); decoded empty")
             }
@@ -419,7 +420,7 @@ extension WebSocketActorSystem {
         taggedLogger.trace("done")
     }
 
-    func receiveInboundCall(envelope: RemoteWebSocketCallEnvelope, on channel: WebSocketAgentChannel) {
+    func receiveInboundCall(envelope: RemoteWebSocketCallEnvelope, on remote: RemoteNode) {
         let taggedLogger = logger.withOp().with(envelope)
         taggedLogger.info("receiveInboundCall")
         taggedLogger.with(envelope.args).debug("args")
@@ -433,11 +434,11 @@ extension WebSocketActorSystem {
             let target = RemoteCallTarget(envelope.invocationTarget)
             taggedLogger.trace("Target: \(target)")
             taggedLogger.trace("Target.identifier: \(target.identifier)")
-            let handler = ResultHandler(actorSystem: self, callID: envelope.callID, system: self, channel: channel)
+            let handler = ResultHandler(actorSystem: self, callID: envelope.callID, system: self, remote: remote)
             taggedLogger.trace("Handler: \(anyRecipient)")
 
             do {
-                var decoder = Self.InvocationDecoder(system: self, envelope: envelope, channel: channel)
+                var decoder = Self.InvocationDecoder(system: self, envelope: envelope, remote: remote)
                 func doExecuteDistributedTarget<Act: DistributedActor>(recipient: Act) async throws {
                     taggedLogger.trace("executeDistributedTarget")
                     try await executeDistributedTarget(
@@ -459,7 +460,7 @@ extension WebSocketActorSystem {
         }
     }
 
-    func receiveInboundReply(envelope: WebSocketReplyEnvelope, on channel: WebSocketAgentChannel) async throws {
+    func receiveInboundReply(envelope: WebSocketReplyEnvelope, on remote: RemoteNode) async throws {
         let taggedLogger = logger.withOp().with(envelope.callID).with(sender: envelope.sender)
         taggedLogger.info("receiveInboundReply")
         try await pendingReplies.receivedReply(callID: envelope.callID, data: envelope.value)
@@ -481,8 +482,7 @@ extension WebSocketActorSystem {
         taggedLogger.info("remoteCall")
         taggedLogger.trace("Call to: \(actor.id), target: \(target), target.identifier: \(target.identifier)")
 
-        let channel = try await self.selectChannel(for: actor.id)
-        taggedLogger.trace("channel: \(channel)")
+        let remoteNode = try await manager.remoteNode(for: actor.id)
 
         taggedLogger.trace("Prepare [\(target)] call...")
         
@@ -502,7 +502,7 @@ extension WebSocketActorSystem {
             
 //            let frame = WebSocketFrame(opcode: .text, data: try JSONEncoder().encode(wireEnvelope))
             
-            try await self.write(channel: channel, envelope: wireEnvelope)
+            try await remoteNode.write(actorSystem: self, envelope: wireEnvelope)
         }
 
         do {
@@ -524,9 +524,7 @@ extension WebSocketActorSystem {
         let taggedLogger = logger.withOp().with(actor.id)
         taggedLogger.trace("Call to: \(actor.id), target: \(target), target.identifier: \(target.identifier)")
         
-        let channel = try await selectChannel(for: actor.id)
-//        taggedLogger.trace("channel: \(channel)")
-        
+        let remoteNode = try await manager.remoteNode(for: actor.id)
         let localInvocation = invocation
         
         taggedLogger.trace("Prepare [\(target)] call...")
@@ -542,7 +540,7 @@ extension WebSocketActorSystem {
             
             taggedLogger.trace("Write envelope: \(wireEnvelope)")
             
-            try await self.write(channel: channel, envelope: wireEnvelope)
+            try await remoteNode.write(actorSystem: self, envelope: wireEnvelope)
         }
         
         taggedLogger.trace("COMPLETED CALL: \(target)")
@@ -550,24 +548,23 @@ extension WebSocketActorSystem {
     
     
     
-    func write(channel: WebSocketAgentChannel, 
+    func write(remote: RemoteNode,
                envelope: WebSocketWireEnvelope) async throws {
         let taggedLogger = logger.withOp()
         taggedLogger.trace("unwrap WebSocketWireEnvelope")
 
         switch envelope {
         case .connectionClose:
-            var data = channel.channel.allocator.buffer(capacity: 2)
+            var data = remote.channel.channel.allocator.buffer(capacity: 2)
             data.write(webSocketErrorCode: .protocolError)
             let frame = WebSocketFrame(fin: true,
                 opcode: .connectionClose,
                 data: data)
-            try await channel.outbound.write(frame)
-            try await channel.channel.close()
+            try await remote.outbound.write(frame)
+//            try await remote.channel.channel.close()
         case .reply, .call:
             let encoder = JSONEncoder()
             encoder.userInfo[.actorSystemKey] = self
-            encoder.userInfo[.channelKey] = channel
 
             do {
                 var data = ByteBuffer()
@@ -575,17 +572,11 @@ extension WebSocketActorSystem {
                 taggedLogger.trace("Write: \(envelope)")
 
                 let frame = WebSocketFrame(fin: true, opcode: .text, data: data)
-                try await channel.outbound.write(frame)
+                try await remote.outbound.write(frame)
             } catch {
                 taggedLogger.error("Failed to serialize call [\(envelope)], error: \(error)")
             }
         }
-    }
-
-    /// Return the Channel we should use to communicate with the given actor..
-    /// Throws an exception if the actor is not reachable.
-    func selectChannel(for actorID: ActorID) async throws -> WebSocketAgentChannel {
-        return try await manager.selectChannel(for: actorID)
     }
 }
 
@@ -595,7 +586,7 @@ public struct WebSocketActorSystemResultHandler: DistributedTargetInvocationResu
     let actorSystem: WebSocketActorSystem
     let callID: CallID
     let system: WebSocketActorSystem
-    let channel: WebSocketAgentChannel
+    let remote: RemoteNode
 
     public func onReturn<Success: Codable>(value: Success) async throws {
         system.logger.withOp().with(callID).trace("returning \(value)")
@@ -603,13 +594,13 @@ public struct WebSocketActorSystemResultHandler: DistributedTargetInvocationResu
         encoder.userInfo[.actorSystemKey] = actorSystem
         let returnValue = try encoder.encode(value)
         let envelope = WebSocketReplyEnvelope(callID: self.callID, sender: nil, value: returnValue)
-        try await actorSystem.write(channel: channel, envelope: WebSocketWireEnvelope.reply(envelope))
+        try await actorSystem.write(remote: remote, envelope: WebSocketWireEnvelope.reply(envelope))
     }
 
     public func onReturnVoid() async throws {
         system.logger.withOp().with(callID).trace("returning Void")
         let envelope = WebSocketReplyEnvelope(callID: self.callID, sender: nil, value: "".data(using: .utf8)!)
-        try await actorSystem.write(channel: channel, envelope: WebSocketWireEnvelope.reply(envelope))
+        try await actorSystem.write(remote: remote, envelope: WebSocketWireEnvelope.reply(envelope))
     }
 
     public func onThrow<Err: Error>(error: Err) async throws {
@@ -618,7 +609,7 @@ public struct WebSocketActorSystemResultHandler: DistributedTargetInvocationResu
         // Always be careful when exposing error information -- especially do not ship back the entire description
         // or error of a thrown value as it may contain information which should never leave the node.
         let envelope = WebSocketReplyEnvelope(callID: self.callID, sender: nil, value: "".data(using: .utf8)!)
-        try await actorSystem.write(channel: channel, envelope: WebSocketWireEnvelope.reply(envelope))
+        try await actorSystem.write(remote: remote, envelope: WebSocketWireEnvelope.reply(envelope))
     }
 }
 
@@ -640,7 +631,7 @@ public enum WebSocketActorSystemError: Error, DistributedActorSystemError {
     /// have an open `Channel` to the remote node. This is currently an error.
     /// Future versions of this library may attempt to reconnect to the remote node
     /// instead of throwing this error.
-    case noChannelToNode(id: NodeIdentity)
+    case noRemoteNode(id: NodeIdentity)
     
     case failedToUpgrade
     

@@ -7,6 +7,11 @@
 
 import Foundation
 
+extension Double {
+    /// The [golden ratio](https://en.wikipedia.org/wiki/Golden_ratio).
+    public static let phi = 1.6180339887498948482
+}
+
 /// Provides a slightly randomized infinite sequence of exponentially growing numbers.
 /// `ExponentialBackoff` is used internally by the WebSocketActorSystem
 /// to time client reconnects after errors, but is public so it can be used elsewhere.
@@ -36,7 +41,7 @@ public struct ExponentialBackoff: Sequence {
                 minDelay: TimeInterval = 0.5,
                 maxDelay: TimeInterval = 30.0,
                 jitter: TimeInterval = 0.25,
-                growth: Double = 1.6180339) {
+                growth: Double = .phi) {
         precondition(initialDelay >= 0)
         precondition(minDelay > 0)
         precondition(minDelay <= maxDelay)

@@ -54,18 +54,19 @@ protocol Manager {
     /// is usually created on a fixed port number and calls to `localPort()` are not needed.
     func localPort() async throws -> Int
     
-    /// The `Manager` should associate the given `nodeID` with the given `channel`.
-    /// Only servers need to implement this, since a client only has a single connection.
-    func associate(nodeID: NodeIdentity, with channel: WebSocketAgentChannel) async
-    
     /// Select a channel to the given `actorID`. This function is only called for remote actors.
     /// Clients can simply return their current channel, while servers need to look up the
     /// channel associated with the actor's node ID.
-    func selectChannel(for actorID: ActorIdentity) async throws -> WebSocketAgentChannel
+    func remoteNode(for nodeID: ActorIdentity) async throws -> RemoteNode
+    
+    func write(envelope: WebSocketWireEnvelope, to nodeID: NodeIdentity) async throws
     
     /// Close all channels and stop re-opening them. This is called when the actor system
     /// wants to shut down.
     func cancel() async
+    
+    func opened(remote: RemoteNode) async
+    func closing(remote: RemoteNode) async
 }
 
 /// The channel type the server uses to listen for new client connections.
@@ -85,7 +86,7 @@ extension WebSocketActorSystem {
     private static let responseBody = ByteBuffer(string: websocketResponse)
     
     enum ServerUpgradeResult {
-        case websocket(WebSocketAgentChannel)
+        case websocket(WebSocketAgentChannel, NodeIdentity)
         case notUpgraded(NIOAsyncChannel<HTTPServerRequestPart, HTTPPart<HTTPResponseHead, ByteBuffer>>)
     }
     
@@ -93,7 +94,7 @@ extension WebSocketActorSystem {
         private let system: WebSocketActorSystem
         private var _task: ResilientTask?
         private var _channel: ServerMasterChannel?
-        private var nodeRegistry = RemoteNodeRegistry()
+        private var nodeRegistry: [NodeIdentity: RemoteNode] = [:]
         private var waitingForChannel: [CheckedContinuation<ServerMasterChannel, Error>] = []
         
         init(system: WebSocketActorSystem) {
@@ -105,21 +106,33 @@ extension WebSocketActorSystem {
             return chan.channel.localAddress?.port ?? 0
         }
         
-        func associate(nodeID: NodeIdentity, with channel: WebSocketAgentChannel) {
-            system.logger.notice("associating \(nodeID) with channel")
-            nodeRegistry.register(id: nodeID, channel: channel)
+        func associateWithCurrentRemoteNode(nodeID: NodeIdentity) {
+            guard let current = RemoteNode.current else {
+                system.logger.critical("Can't associate nodeID without current RemoteNode")
+                return
+            }
+            system.logger.trace("associating \(nodeID) with current RemoteNode")
+            nodeRegistry[nodeID] = current
         }
         
-        func selectChannel(for actorID: ActorIdentity) async throws -> WebSocketAgentChannel {
+        func remoteNode(for actorID: ActorIdentity) async throws -> RemoteNode {
             guard let nodeID = actorID.node else {
-                system.logger.error("The nodeID for remote actor \(actorID) is missing.")
+                system.logger.critical("Cannot get RemoteNode without nodeID for actor \(actorID)")
                 throw WebSocketActorSystemError.missingNodeID(id: actorID)
             }
-            guard let channel = nodeRegistry.channel(for: nodeID) else {
-                system.logger.error("There is not currently a channel for nodeID \(nodeID)")
-                throw WebSocketActorSystemError.noChannelToNode(id: nodeID)
+            guard let remoteNode = nodeRegistry[nodeID] else {
+                system.logger.error("There is not currently a RemoteNode for nodeID \(nodeID)")
+                throw WebSocketActorSystemError.noRemoteNode(id: nodeID)
             }
-            return channel
+            return remoteNode
+        }
+        
+        func write(envelope: WebSocketWireEnvelope, to nodeID: NodeIdentity) async throws {
+            guard let remoteNode = nodeRegistry[nodeID] else {
+                system.logger.with(nodeID).critical("could not find RemoteNode for \(nodeID)")
+                throw WebSocketActorSystemError.noRemoteNode(id: nodeID)
+            }
+            try await remoteNode.write(actorSystem: system, envelope: envelope)
         }
         
         private func setChannel(_ channel: ServerMasterChannel) async {
@@ -146,6 +159,14 @@ extension WebSocketActorSystem {
             }
         }
         
+        func opened(remote: RemoteNode) async {
+            nodeRegistry[remote.nodeID] = remote
+        }
+        
+        func closing(remote: RemoteNode) async {
+            nodeRegistry.removeValue(forKey: remote.nodeID)
+        }
+        
         public func cancel() {
             _channel = nil
             _task?.cancel()
@@ -155,31 +176,38 @@ extension WebSocketActorSystem {
         func connect(host: String, port: Int) {
             cancel()
             _task = ResilientTask() { initialized in
-                let channel = try await Self.openServerChannel(host: host, port: port)
-                await self.setChannel(channel)
                 
-                await initialized()
-                
-                // We are handling each incoming connection in a separate child task. It is important
-                // to use a discarding task group here which automatically discards finished child tasks.
-                // A normal task group retains all child tasks and their outputs in memory until they are
-                // consumed by iterating the group or by exiting the group. Since, we are never consuming
-                // the results of the group we need the group to automatically discard them; otherwise, this
-                // would result in a memory leak over time.
-                if #available(macOS 14.0, iOS 17.0, watchOS 10.0, tvOS 17.0, *) {
-                    try await withThrowingDiscardingTaskGroup { group in
-                        for try await upgradeResult in channel.inbound {
-                            group.addTask {
-                                await self.system.handleUpgradeResult(upgradeResult)
+                try await TaskPath.with(name: "server connection") {
+                    let channel = try await self.openServerChannel(host: host, port: port)
+                    await self.setChannel(channel)
+                    
+                    await initialized()
+                    
+                    // We are handling each incoming connection in a separate child task. It is important
+                    // to use a discarding task group here which automatically discards finished child tasks.
+                    // A normal task group retains all child tasks and their outputs in memory until they are
+                    // consumed by iterating the group or by exiting the group. Since, we are never consuming
+                    // the results of the group we need the group to automatically discard them; otherwise, this
+                    // would result in a memory leak over time.
+                    if #available(macOS 14.0, iOS 17.0, watchOS 10.0, tvOS 17.0, *) {
+                        try await withThrowingDiscardingTaskGroup { group in
+                            try await channel.executeThenClose { inbound, outbound in
+                                for try await upgradeResult in inbound {
+                                    group.addTask {
+                                        await self.system.handleUpgradeResult(upgradeResult)
+                                    }
+                                }
                             }
                         }
-                    }
-                } else {
-                    // Fallback on earlier versions
-                    try await withThrowingTaskGroup(of: Void.self) { group in
-                        for try await upgradeResult in channel.inbound {
-                            group.addTask {
-                                await self.system.handleUpgradeResult(upgradeResult)
+                    } else {
+                        // Fallback on earlier versions
+                        try await withThrowingTaskGroup(of: Void.self) { group in
+                            try await channel.executeThenClose { inbound, outbound in
+                                for try await upgradeResult in inbound {
+                                    group.addTask {
+                                        await self.system.handleUpgradeResult(upgradeResult)
+                                    }
+                                }
                             }
                         }
                     }
@@ -187,7 +215,7 @@ extension WebSocketActorSystem {
             }
         }
         
-        static func openServerChannel(host: String, port: Int) async throws -> ServerMasterChannel {
+        func openServerChannel(host: String, port: Int) async throws -> ServerMasterChannel {
             try await ServerBootstrap(group: MultiThreadedEventLoopGroup.singleton)
                 .serverChannelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
                 .bind(
@@ -197,12 +225,16 @@ extension WebSocketActorSystem {
                     channel.eventLoop.makeCompletedFuture {
                         let upgrader = NIOAsyncWebSockets.NIOTypedWebSocketServerUpgrader<ServerUpgradeResult>(
                             shouldUpgrade: { (channel, head) in
-                                channel.eventLoop.makeSucceededFuture(HTTPHeaders())
+//                                guard head.headers.nodeID != nil else {
+//                                    return channel.eventLoop.makeSucceededFuture(nil)
+//                                }
+                                return channel.eventLoop.makeSucceededFuture(HTTPHeaders())
                             },
-                            upgradePipelineHandler: { (channel, _) in
-                                channel.eventLoop.makeCompletedFuture {
-                                    let asyncChannel = try WebSocketAgentChannel(synchronouslyWrapping: channel)
-                                    return ServerUpgradeResult.websocket(asyncChannel)
+                            upgradePipelineHandler: { (channel, requestHead) in
+                                return channel.eventLoop.makeCompletedFuture {
+                                    let remoteNodeID = requestHead.headers.nodeID!
+                                    let asyncChannel = try WebSocketAgentChannel(wrappingChannelSynchronously: channel)
+                                    return ServerUpgradeResult.websocket(asyncChannel, remoteNodeID)
                                 }
                             }
                         )
@@ -212,7 +244,7 @@ extension WebSocketActorSystem {
                             notUpgradingCompletionHandler: { channel in
                                 channel.eventLoop.makeCompletedFuture {
                                     try channel.pipeline.syncOperations.addHandler(HTTPByteBufferResponsePartHandler())
-                                    let asyncChannel = try NIOAsyncChannel<HTTPServerRequestPart, HTTPPart<HTTPResponseHead, ByteBuffer>>(synchronouslyWrapping: channel)
+                                    let asyncChannel = try NIOAsyncChannel<HTTPServerRequestPart, HTTPPart<HTTPResponseHead, ByteBuffer>>(wrappingChannelSynchronously: channel)
                                     return ServerUpgradeResult.notUpgraded(asyncChannel)
                                 }
                             }
@@ -241,13 +273,13 @@ extension WebSocketActorSystem {
         // encounters an error.
         do {
             switch try await upgradeResult.get() {
-            case .websocket(let websocketChannel):
+            case .websocket(let websocketChannel, let remoteNodeID):
                 logger.trace("Handling websocket connection")
-                try await self.handleWebsocketChannel(websocketChannel)
+                try await self.handleWebsocketChannel(websocketChannel, remoteNodeID: remoteNodeID)
                 logger.trace("Done handling websocket connection")
             case .notUpgraded(let httpChannel):
                 logger.trace("Handling HTTP connection")
-                try await Self.handleHTTPChannel(httpChannel)
+                try await handleHTTPChannel(httpChannel)
                 logger.trace("Done handling HTTP connection")
             }
         } catch {
@@ -256,13 +288,13 @@ extension WebSocketActorSystem {
     }
 
     
-    private func handleWebsocketChannel(_ channel: WebSocketAgentChannel) async throws {
+    private func handleWebsocketChannel(_ channel: WebSocketAgentChannel, remoteNodeID: NodeIdentity) async throws {
         let taggedLogger = logger.withOp().with(channel)
         taggedLogger.info("new client connection")
         
         try await withThrowingTaskGroup(of: Void.self) { group in
             group.addTask {
-                try await self.dispatchIncomingFrames(channel: channel)
+                try await self.dispatchIncomingFrames(channel: channel, remoteNodeID: remoteNodeID)
             }
 
             try await group.next()
@@ -289,37 +321,45 @@ extension WebSocketActorSystem {
 //        awaitingClose = true
     }
 
-    private static func handleHTTPChannel(_ channel: NIOAsyncChannel<HTTPServerRequestPart, HTTPPart<HTTPResponseHead, ByteBuffer>>) async throws {
-        for try await requestPart in channel.inbound {
-            // We're not interested in request bodies here: we're just serving up GET responses
-            // to get the client to initiate a websocket request.
-            guard case .head(let head) = requestPart else {
-                return
+    private func handleHTTPChannel(_ channel: NIOAsyncChannel<HTTPServerRequestPart, HTTPPart<HTTPResponseHead, ByteBuffer>>) async throws {
+        try await channel.executeThenClose { inbound, outbound in
+            for try await requestPart in inbound {
+                // We're not interested in request bodies here: we're just serving up GET responses
+                // to get the client to initiate a websocket request.
+                guard case .head(let head) = requestPart else {
+                    return
+                }
+
+                // GETs only.
+                guard case .GET = head.method else {
+                    try await Self.respond405(writer: outbound)
+                    return
+                }
+                
+                guard let remoteNodeID = head.headers.nodeID else {
+                    try await Self.respond405(writer: outbound)
+                    return
+                }
+
+                var headers = HTTPHeaders()
+                headers.nodeID = nodeID
+                headers.add(name: "Content-Type", value: "text/html")
+                headers.add(name: "Content-Length", value: String(Self.responseBody.readableBytes))
+                headers.add(name: "Connection", value: "close")
+                let responseHead = HTTPResponseHead(
+                    version: .init(major: 1, minor: 1),
+                    status: .ok,
+                    headers: headers
+                )
+
+                try await outbound.write(
+                    contentsOf: [
+                        .head(responseHead),
+                        .body(Self.responseBody),
+                        .end(nil)
+                    ]
+                )
             }
-
-            // GETs only.
-            guard case .GET = head.method else {
-                try await Self.respond405(writer: channel.outbound)
-                return
-            }
-
-            var headers = HTTPHeaders()
-            headers.add(name: "Content-Type", value: "text/html")
-            headers.add(name: "Content-Length", value: String(Self.responseBody.readableBytes))
-            headers.add(name: "Connection", value: "close")
-            let responseHead = HTTPResponseHead(
-                version: .init(major: 1, minor: 1),
-                status: .ok,
-                headers: headers
-            )
-
-            try await channel.outbound.write(
-                contentsOf: [
-                    .head(responseHead),
-                    .body(Self.responseBody),
-                    .end(nil)
-                ]
-            )
         }
     }
 

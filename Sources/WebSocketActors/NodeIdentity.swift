@@ -49,5 +49,5 @@ extension NodeIdentity: CustomStringConvertible {
 }
 
 extension CodingUserInfoKey {
-    static let channelKey = CodingUserInfoKey(rawValue: "channel")!
+    static let remoteNodeKey = CodingUserInfoKey(rawValue: "remoteNode")!
 }
