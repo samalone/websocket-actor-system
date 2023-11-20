@@ -94,8 +94,13 @@ extension WebSocketActorSystem {
         private let system: WebSocketActorSystem
         private var _task: ResilientTask?
         private var _channel: ServerMasterChannel?
-        private var nodeRegistry: [NodeIdentity: RemoteNode] = [:]
         private var waitingForChannel: [CheckedContinuation<ServerMasterChannel, Error>] = []
+        private var remoteNodes: [NodeIdentity: Status] = [:]
+        
+        enum Status {
+            case current(RemoteNode)
+            case future([CheckedContinuation<RemoteNode, Never>])
+        }
         
         init(system: WebSocketActorSystem) {
             self.system = system
@@ -106,32 +111,16 @@ extension WebSocketActorSystem {
             return chan.channel.localAddress?.port ?? 0
         }
         
-        func associateWithCurrentRemoteNode(nodeID: NodeIdentity) {
-            guard let current = RemoteNode.current else {
-                system.logger.critical("Can't associate nodeID without current RemoteNode")
-                return
-            }
-            system.logger.trace("associating \(nodeID) with current RemoteNode")
-            nodeRegistry[nodeID] = current
-        }
-        
         func remoteNode(for actorID: ActorIdentity) async throws -> RemoteNode {
             guard let nodeID = actorID.node else {
                 system.logger.critical("Cannot get RemoteNode without nodeID for actor \(actorID)")
                 throw WebSocketActorSystemError.missingNodeID(id: actorID)
             }
-            guard let remoteNode = nodeRegistry[nodeID] else {
-                system.logger.error("There is not currently a RemoteNode for nodeID \(nodeID)")
-                throw WebSocketActorSystemError.noRemoteNode(id: nodeID)
-            }
-            return remoteNode
+            return await requireRemoteNode(nodeID: nodeID)
         }
         
         func write(envelope: WebSocketWireEnvelope, to nodeID: NodeIdentity) async throws {
-            guard let remoteNode = nodeRegistry[nodeID] else {
-                system.logger.with(nodeID).critical("could not find RemoteNode for \(nodeID)")
-                throw WebSocketActorSystemError.noRemoteNode(id: nodeID)
-            }
+            let remoteNode = await requireRemoteNode(nodeID: nodeID)
             try await remoteNode.write(actorSystem: system, envelope: envelope)
         }
         
@@ -159,12 +148,43 @@ extension WebSocketActorSystem {
             }
         }
         
+        func requireRemoteNode(nodeID: NodeIdentity) async -> RemoteNode {
+            if let status = remoteNodes[nodeID] {
+                switch status {
+                case .current(let node):
+                    return node
+                case .future(let continuations):
+                    return await withCheckedContinuation { continuation in
+                        Task {
+                            remoteNodes[nodeID] = .future(continuations + [continuation])
+                        }
+                    }
+                }
+            }
+            else {
+                return await withCheckedContinuation { continuation in
+                    Task {
+                        remoteNodes[nodeID] = .future([continuation])
+                    }
+                }
+            }
+        }
+        
         func opened(remote: RemoteNode) async {
-            nodeRegistry[remote.nodeID] = remote
+            let nodeID = remote.nodeID
+            if let status = remoteNodes[nodeID], case let .future(continuations) = status {
+                remoteNodes[nodeID] = .current(remote)
+                for continuation in continuations {
+                    continuation.resume(returning: remote)
+                }
+            }
+            else {
+                remoteNodes[nodeID] = .current(remote)
+            }
         }
         
         func closing(remote: RemoteNode) async {
-            nodeRegistry.removeValue(forKey: remote.nodeID)
+            remoteNodes.removeValue(forKey: remote.nodeID)
         }
         
         public func cancel() {

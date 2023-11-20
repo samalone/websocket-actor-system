@@ -115,12 +115,9 @@ final class WebsocketActorSystemTests: XCTestCase {
     }
     
     func testRemoteCalls() async throws {
-//        try await Task.sleep(for: .seconds(1))
         try await TaskPath.with(name: "testRemoteCalls") {
             let client = try await WebSocketActorSystem(mode: .client(of: serverAddress),
                                                         logger: Logger(label: "\(name) client").with(level: .trace))
-            
-            //        try await Task.sleep(for: .seconds(1))
             
             // Create the real Alice on the server
             let serverAlice = server.makeActor(id: .alice) {
@@ -130,34 +127,24 @@ final class WebsocketActorSystemTests: XCTestCase {
             // Create a local reference to Alice on the client
             let clientAlice = try Person.resolve(id: .alice, using: client)
             
-            try await Task.sleep(for: .seconds(1))
+
+            // Send Alice a message without needing a reply
+            try await clientAlice.receiveGift("mandrake")
+            // Make sure Alice received the gift.
+            let gift = try await serverAlice.lastGift
+            XCTAssertEqual(gift, "mandrake")
             
-            do {
-                // Send Alice a message without needing a reply
-                try await clientAlice.receiveGift("mandrake")
-                // Make sure Alice received the gift.
-                let gift = try await serverAlice.lastGift
-                XCTAssertEqual(gift, "mandrake")
-                
-                // Send Alice a message that returns a result
-                let result = try await clientAlice.addOne(42)
-                XCTAssertEqual(result, 43)
-            }
-            catch {
-                try await Task.sleep(for: .seconds(10))
-                throw error
-            }
+            // Send Alice a message that returns a result
+            let result = try await clientAlice.addOne(42)
+            XCTAssertEqual(result, 43)
             
             await client.shutdownGracefully()
         }
     }
     
     func testServerPush() async throws {
-//        try await Task.sleep(for: .seconds(1))
         let client = try await WebSocketActorSystem(mode: .client(of: serverAddress),
                                                     logger: Logger(label: "\(name) client").with(level: .trace))
-        
-//        try await Task.sleep(for: .seconds(1))
         
         // Create the real Alice on the server
         let serverAlice = server.makeActor(id: .alice) {
@@ -170,8 +157,6 @@ final class WebsocketActorSystemTests: XCTestCase {
         let clientBob = client.makeActor(id: .bob) {
             Person(actorSystem: client, name: "Bob")
         }
-        
-        try await Task.sleep(for: .seconds(1))
         
         try await clientAlice.move(near: clientBob)
         

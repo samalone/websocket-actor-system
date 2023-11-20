@@ -48,15 +48,16 @@ extension WebSocketActorSystem {
     private actor ClientManager: Manager {
         
         func remoteNode(for actorID: ActorIdentity) async throws -> RemoteNode {
-            guard let remoteNode else {
-                system.logger.critical("No remoteNode for actorID \(actorID) on \(TaskPath.current)")
-                throw WebSocketActorSystemError.noRemoteNode(id: actorID.node ?? NodeIdentity("unknown"))
+            if let remoteNode {
+                return remoteNode
             }
-//            guard let remoteNode else {
-//                system.logger.critical("No remoteNode for actorID \(actorID)")
-//                throw WebSocketActorSystemError.noRemoteNode(id: actorID.node ?? NodeIdentity("unknown"))
-//            }
-            return remoteNode
+            else {
+                return await withCheckedContinuation { continuation in
+                    Task {
+                        waitingForRemoteNode.append(continuation)
+                    }
+                }
+            }
         }
         
         func write(envelope: WebSocketWireEnvelope, to nodeID: NodeIdentity) async throws {
@@ -77,6 +78,7 @@ extension WebSocketActorSystem {
         private var serverConnection: ServerConnection? = nil
         private var remoteNode: RemoteNode? = nil
         private var waitingForChannel: [CheckedContinuation<WebSocketAgentChannel, Error>] = []
+        private var waitingForRemoteNode: [CheckedContinuation<RemoteNode, Never>] = []
         
 #if canImport(Network)
         static let group = NIOTSEventLoopGroup.singleton
@@ -128,6 +130,10 @@ extension WebSocketActorSystem {
         
         func opened(remote: RemoteNode) async {
             self.remoteNode = remote
+            for continuation in waitingForRemoteNode {
+                continuation.resume(returning: remote)
+            }
+            waitingForRemoteNode = []
         }
         
         func closing(remote: RemoteNode) async {
