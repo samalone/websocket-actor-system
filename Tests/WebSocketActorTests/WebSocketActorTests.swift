@@ -92,7 +92,7 @@ final class WebsocketActorSystemTests: XCTestCase {
     }
     
     func testLocalCall() async throws {
-        let alice = server.makeActor() {
+        let alice = server.makeLocalActor() {
             Person(actorSystem: server, name: "Alice")
         }
         
@@ -101,11 +101,11 @@ final class WebsocketActorSystemTests: XCTestCase {
     }
     
     func testLocalCallback() async throws {
-        let alice = server.makeActor() {
+        let alice = server.makeLocalActor() {
             Person(actorSystem: server, name: "Alice")
         }
         
-        let bob = server.makeActor() {
+        let bob = server.makeLocalActor() {
             Person(actorSystem: server, name: "Bob")
         }
         
@@ -120,7 +120,7 @@ final class WebsocketActorSystemTests: XCTestCase {
                                                         logger: Logger(label: "\(name) client").with(level: .trace))
             
             // Create the real Alice on the server
-            let serverAlice = server.makeActor(id: .alice) {
+            let serverAlice = server.makeLocalActor(id: .alice) {
                 Person(actorSystem: server, name: "Alice")
             }
             
@@ -147,14 +147,14 @@ final class WebsocketActorSystemTests: XCTestCase {
                                                     logger: Logger(label: "\(name) client").with(level: .trace))
         
         // Create the real Alice on the server
-        let serverAlice = server.makeActor(id: .alice) {
+        let serverAlice = server.makeLocalActor(id: .alice) {
             Person(actorSystem: server, name: "Alice")
         }
         
         // Create a local reference to Alice on the client
         let clientAlice = try Person.resolve(id: .alice, using: client)
         
-        let clientBob = client.makeActor(id: .bob) {
+        let clientBob = client.makeLocalActor(id: .bob) {
             Person(actorSystem: client, name: "Bob")
         }
         

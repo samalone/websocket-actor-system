@@ -84,22 +84,26 @@ public final class WebSocketActorSystem: DistributedActorSystem,
     public typealias InvocationDecoder = NIOInvocationDecoder
     public typealias SerializationRequirement = any Codable
     
-    public static let defaultLogger = Logger(label: "WebSocketActors")
-
-    private let lock = NSLock()
+    typealias OnDemandResolveHandler = (ActorID) -> (any DistributedActor)?
     
-    /// A mapping from ActorID to actor for the local actors only.
-    /// Remote actors are not part of this dictionary.
-    private var managedActors: [ActorID: any DistributedActor] = [:]
+    public static let defaultLogger = Logger(label: "WebSocketActors")
+    
     public let nodeID: NodeIdentity
     public let logger: Logger
+    private let pendingReplies = PendingReplies()
+    let mode: WebSocketActorSystemMode
     
-    private var pendingReplies = PendingReplies()
-    
-    var mode: WebSocketActorSystemMode
+    /// The ``manager`` encapsulates the differences between the client and the server.
+    /// It opens communications with other nodes and maps NodeIDs to RemoteNodes.
+    ///
+    /// Although this is a `var`, it is set during initialization and never changed.
+    /// It is only a var to solve initialization problems.
     private var manager: Manager!
-
-    typealias OnDemandResolveHandler = (ActorID) -> (any DistributedActor)?
+    
+    /// The ``lock`` limits access to `managedActors` and `resolveOnDemandHandler`.
+    /// These properties are used in synchronous code, and the lock makes them thread-safe.
+    private let lock = NSLock()
+    private var managedActors: [ActorID: any DistributedActor] = [:]
     private var resolveOnDemandHandler: OnDemandResolveHandler? = nil
 
     public init(mode: WebSocketActorSystemMode, id: NodeIdentity = .random(), logger: Logger = defaultLogger) async throws {
@@ -353,11 +357,10 @@ extension WebSocketActorSystem {
         self.resolveOnDemandHandler = resolveOnDemand
     }
 
-    @TaskLocal
-    static var actorIDHint: ActorID?
+    @TaskLocal static var actorIDHint: ActorID?
 
     /// Create a local actor with the specified id.
-    public func makeActor<Act>(id: ActorID, _ factory: () -> Act) -> Act
+    public func makeLocalActor<Act>(id: ActorID, _ factory: () -> Act) -> Act
     where Act: DistributedActor, Act.ActorSystem == WebSocketActorSystem {
         Self.$actorIDHint.withValue(id.with(nodeID)) {
             factory()
@@ -365,7 +368,7 @@ extension WebSocketActorSystem {
     }
     
     /// Create a local actor with a random id prefixed with the actor's type.
-    public func makeActor<Act>(_ factory: () -> Act) -> Act
+    public func makeLocalActor<Act>(_ factory: () -> Act) -> Act
         where Act: DistributedActor, Act.ActorSystem == WebSocketActorSystem {
             Self.$actorIDHint.withValue(.random(for: Act.self, node: nodeID)) {
             factory()
@@ -416,7 +419,7 @@ extension WebSocketActorSystem {
             taggedLogger.trace("Handler: \(anyRecipient)")
 
             do {
-                var decoder = Self.InvocationDecoder(system: self, envelope: envelope)
+                var decoder = NIOInvocationDecoder(system: self, envelope: envelope)
                 func doExecuteDistributedTarget<Act: DistributedActor>(recipient: Act) async throws {
                     taggedLogger.trace("executeDistributedTarget")
                     try await executeDistributedTarget(
