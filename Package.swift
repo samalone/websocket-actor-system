@@ -38,6 +38,9 @@ let package = Package(
                 .product(name: "NIOTransportServices", package: "swift-nio-transport-services"),
                 .product(name: "Logging", package: "swift-log"),
                 .product(name: "NIOAsyncWebSockets", package: "nio-async-websockets"),
+            ],
+            swiftSettings: [
+                .unsafeFlags(["-Xfrontend", "-validate-tbd-against-ir=none"])
             ]),
         .testTarget(
             name: "WebSocketActorTests",
