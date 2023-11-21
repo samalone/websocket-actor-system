@@ -105,6 +105,8 @@ public final class WebSocketActorSystem: DistributedActorSystem,
     private let lock = NSLock()
     private var managedActors: [ActorID: any DistributedActor] = [:]
     private var resolveOnDemandHandler: OnDemandResolveHandler? = nil
+    
+    public var monitor: ResilientTask.MonitorFunction? = nil
 
     public init(mode: WebSocketActorSystemMode, id: NodeIdentity = .random(), logger: Logger = defaultLogger) async throws {
         self.nodeID = id

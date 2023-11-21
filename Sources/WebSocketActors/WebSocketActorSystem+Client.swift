@@ -76,9 +76,13 @@ extension WebSocketActorSystem {
             remoteNode?.channel.channel.localAddress?.port ?? 0
         }
         
+        func updateConnectionStatus(_ status: ResilientTask.Status) async {
+            await system.monitor?(status)
+        }
+        
         func connect(host: String, port: Int) {
             cancel()
-            task = ResilientTask() { initialized in
+            task = ResilientTask(monitor: self.updateConnectionStatus(_:)) { initialized in
                 try await TaskPath.with(name: "client connection") {
                     let serverConnection = try await self.openClientChannel(host: host, port: port)
                     self.system.logger.trace("got serverConnection to node \(serverConnection.nodeID) on \(TaskPath.current)")
