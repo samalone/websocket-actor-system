@@ -66,7 +66,7 @@ protocol Manager {
 }
 
 /// The channel type the server uses to listen for new client connections.
-typealias ServerMasterChannel = NIOAsyncChannel<EventLoopFuture<WebSocketActorSystem.ServerUpgradeResult>, Never>
+typealias ServerListeningChannel = NIOAsyncChannel<EventLoopFuture<WebSocketActorSystem.ServerUpgradeResult>, Never>
 
 extension WebSocketAgentChannel {
     var remoteDescription: String {
@@ -85,8 +85,8 @@ extension WebSocketActorSystem {
     private actor ServerManager: Manager {
         private let system: WebSocketActorSystem
         private var _task: ResilientTask?
-        private var _channel: ServerMasterChannel?
-        private var waitingForChannel: [CheckedContinuation<ServerMasterChannel, Never>] = []
+        private var _channel: ServerListeningChannel?
+        private var waitingForChannel: [CheckedContinuation<ServerListeningChannel, Never>] = []
         private var remoteNodes: [NodeIdentity: Status] = [:]
 
         enum Status {
@@ -111,7 +111,7 @@ extension WebSocketActorSystem {
             return await requireRemoteNode(nodeID: nodeID)
         }
 
-        private func setChannel(_ channel: ServerMasterChannel) {
+        private func setChannel(_ channel: ServerListeningChannel) {
             _channel = channel
             for waiter in waitingForChannel {
                 waiter.resume(returning: channel)
@@ -119,7 +119,7 @@ extension WebSocketActorSystem {
             waitingForChannel.removeAll()
         }
 
-        func requireChannel() async throws -> ServerMasterChannel {
+        func requireChannel() async throws -> ServerListeningChannel {
             if let channel = _channel {
                 channel
             }
@@ -218,7 +218,7 @@ extension WebSocketActorSystem {
             }
         }
 
-        func openServerChannel(host: String, port: Int) async throws -> ServerMasterChannel {
+        func openServerChannel(host: String, port: Int) async throws -> ServerListeningChannel {
             try await ServerBootstrap(group: MultiThreadedEventLoopGroup.singleton)
                 .serverChannelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
                 .bind(host: host,
@@ -226,49 +226,44 @@ extension WebSocketActorSystem {
             { channel in
                 channel.eventLoop.makeCompletedFuture {
                     let upgrader = NIOAsyncWebSockets
-                        .NIOTypedWebSocketServerUpgrader<ServerUpgradeResult>(shouldUpgrade: { channel, _ in
+                        .NIOTypedWebSocketServerUpgrader<ServerUpgradeResult>(
+                            shouldUpgrade: { channel, _ in
 //                                guard head.headers.nodeID != nil else {
 //                                    return channel.eventLoop.makeSucceededFuture(nil)
 //                                }
-                                                                                  channel
-                                                                                      .eventLoop
-                                                                                      .makeSucceededFuture(HTTPHeaders())
-                                                                              },
-                                                                              upgradePipelineHandler: { channel, requestHead in
-                                                                                  channel
-                                                                                      .eventLoop
-                                                                                      .makeCompletedFuture {
-                                                                                          let remoteNodeID =
-                                                                                              requestHead
-                                                                                                  .headers
-                                                                                                  .nodeID!
-                                                                                          let asyncChannel =
-                                                                                              try WebSocketAgentChannel(wrappingChannelSynchronously: channel)
-                                                                                          return ServerUpgradeResult
-                                                                                              .websocket(asyncChannel,
-                                                                                                         remoteNodeID)
-                                                                                      }
-                                                                              })
+                                channel
+                                    .eventLoop
+                                    .makeSucceededFuture(HTTPHeaders())
+                            },
+                            upgradePipelineHandler: { channel, requestHead in
+                                channel
+                                    .eventLoop
+                                    .makeCompletedFuture {
+                                        let remoteNodeID = requestHead.headers.nodeID!
+                                        let asyncChannel =
+                                            try WebSocketAgentChannel(wrappingChannelSynchronously: channel)
+                                        return ServerUpgradeResult.websocket(asyncChannel, remoteNodeID)
+                                    }
+                            })
 
-                    let serverUpgradeConfiguration = NIOTypedHTTPServerUpgradeConfiguration(upgraders: [upgrader],
-                                                                                            notUpgradingCompletionHandler: { channel in
-                                                                                                channel.eventLoop
-                                                                                                    .makeCompletedFuture {
-                                                                                                        try channel
-                                                                                                            .pipeline
-                                                                                                            .syncOperations
-                                                                                                            .addHandler(HTTPByteBufferResponsePartHandler())
-                                                                                                        let asyncChannel =
-                                                                                                            try NIOAsyncChannel<HTTPServerRequestPart,
-                                                                                                                HTTPPart<HTTPResponseHead,
-                                                                                                                    ByteBuffer>>(wrappingChannelSynchronously: channel)
-                                                                                                        return ServerUpgradeResult
-                                                                                                            .notUpgraded(asyncChannel)
-                                                                                                    }
-                                                                                            })
+                    let serverUpgradeConfiguration = NIOTypedHTTPServerUpgradeConfiguration(
+                        upgraders: [upgrader],
+                        notUpgradingCompletionHandler: { channel in
+                            channel.eventLoop
+                                .makeCompletedFuture {
+                                    try channel.pipeline.syncOperations.addHandler(HTTPByteBufferResponsePartHandler())
+                                    let asyncChannel =
+                                        try NIOAsyncChannel<HTTPServerRequestPart,
+                                            HTTPPart<HTTPResponseHead,
+                                                ByteBuffer>>(wrappingChannelSynchronously: channel)
+                                    return ServerUpgradeResult
+                                        .notUpgraded(asyncChannel)
+                                }
+                        })
 
                     let negotiationResultFuture = try channel.pipeline.syncOperations
-                        .configureUpgradableHTTPServerPipeline(configuration: .init(upgradeConfiguration: serverUpgradeConfiguration))
+                        .configureUpgradableHTTPServerPipeline(
+                            configuration: .init(upgradeConfiguration: serverUpgradeConfiguration))
 
                     return negotiationResultFuture
                 }

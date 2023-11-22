@@ -159,7 +159,8 @@ extension WebSocketActorSystem {
                                                                })
 
                     let negotiationResultFuture = try channel.pipeline.syncOperations
-                        .configureUpgradableHTTPClientPipeline(configuration: .init(upgradeConfiguration: clientUpgradeConfiguration))
+                        .configureUpgradableHTTPClientPipeline(
+                            configuration: .init(upgradeConfiguration: clientUpgradeConfiguration))
 
                     return negotiationResultFuture
                 }

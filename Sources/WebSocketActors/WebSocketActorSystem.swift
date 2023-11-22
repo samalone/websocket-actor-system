@@ -447,7 +447,7 @@ extension WebSocketActorSystem {
             catch {
                 taggedLogger
                     .error("failed to executeDistributedTarget [\(target)] on [\(anyRecipient)], error: \(error)")
-                try! await handler.onThrow(error: error)
+                try? await handler.onThrow(error: error)
             }
         }
     }
