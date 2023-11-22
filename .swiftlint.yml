@@ -1,0 +1,7 @@
+disabled_rules:
+  - identifier_name
+  - nesting
+  - opening_brace
+  - statement_position
+  - trailing_comma
+force_try: warning

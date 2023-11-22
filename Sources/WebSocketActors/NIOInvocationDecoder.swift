@@ -37,7 +37,7 @@ public class NIOInvocationDecoder: DistributedTargetInvocationDecoder {
 
     public func decodeNextArgument<Argument: Codable>() throws -> Argument {
         let taggedLogger = logger.withOp()
-        
+
         guard let data = argumentsIterator.next() else {
             taggedLogger.trace("none left")
             throw WebSocketActorSystemError.notEnoughArgumentsInEnvelope(expected: Argument.self)

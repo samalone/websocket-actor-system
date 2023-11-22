@@ -16,11 +16,11 @@ import Foundation
 /// unique IDs for each client.
 public struct NodeIdentity: Hashable, Sendable, Equatable {
     public let id: String
-    
+
     public init(id: String) {
         self.id = id
     }
-    
+
     public static func random() -> Self {
         .init(id: "\(UUID().uuidString)")
     }
@@ -30,7 +30,7 @@ extension NodeIdentity: Codable {
     public func encode(to encoder: Encoder) throws {
         try id.encode(to: encoder)
     }
-    
+
     public init(from decoder: Decoder) throws {
         id = try String(from: decoder)
     }

@@ -14,14 +14,16 @@ final class RemoteNode {
     let channel: WebSocketAgentChannel
     let inbound: NIOAsyncChannelInboundStream<WebSocketFrame>
     let outbound: WebSocketOutbound
-    
-    static func withRemoteNode(nodeID: NodeIdentity, channel: WebSocketAgentChannel, block: (RemoteNode) async throws -> Void) async throws {
+
+    static func withRemoteNode(nodeID: NodeIdentity, channel: WebSocketAgentChannel,
+                               block: (RemoteNode) async throws -> Void) async throws
+    {
         try await channel.executeThenClose { inbound, outbound in
             let remote = RemoteNode(nodeID: nodeID, channel: channel, inbound: inbound, outbound: outbound)
             try await block(remote)
         }
     }
-    
+
     private init(nodeID: NodeIdentity,
                  channel: WebSocketAgentChannel,
                  inbound: NIOAsyncChannelInboundStream<WebSocketFrame>,
@@ -32,7 +34,7 @@ final class RemoteNode {
         self.inbound = inbound
         self.outbound = outbound
     }
-    
+
     func write(actorSystem: WebSocketActorSystem, envelope: WebSocketWireEnvelope) async throws {
         switch envelope {
         case .connectionClose:

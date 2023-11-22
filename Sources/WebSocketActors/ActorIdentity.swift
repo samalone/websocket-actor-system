@@ -2,7 +2,8 @@
  See LICENSE folder for this sample’s licensing information.
 
  Abstract:
- Used as `ActorID` by all distributed actors in this sample app. It is used to uniquely identify any given actor within its actor system.
+ Used as `ActorID` by all distributed actors in this sample app.
+ It is used to uniquely identify any given actor within its actor system.
  */
 
 import Distributed
@@ -31,47 +32,47 @@ public struct ActorIdentity: Sendable, Encodable, CustomStringConvertible, Custo
     public let node: NodeIdentity?
     public let id: String
     public let type: String?
-    
+
     public init(id: String, type: String? = nil, node: NodeIdentity? = nil) {
         self.id = id
         self.type = type
         self.node = node
     }
-    
+
     enum CodingKeys: String, CodingKey {
         case node
         case id
         case type
     }
-    
+
     /// Create a random ActorIdentity
     public static func random(type: String? = nil, node: NodeIdentity? = nil) -> Self {
         .init(id: "\(UUID().uuidString)", type: type, node: node)
     }
-    
+
     /// Create a random ActorIdentity with a prefix based on the provided type.
     public static func random<Act>(for _: Act.Type, node: NodeIdentity? = nil) -> Self
         where Act: DistributedActor, Act.ID == ActorIdentity
     {
         .random(type: "\(Act.self)", node: node)
     }
-    
+
     func with(_ nodeID: NodeIdentity) -> ActorIdentity {
         ActorIdentity(id: id, type: type, node: nodeID)
     }
-    
+
     /// Does this id have the proper prefix for the provided type?
     public func hasType<Act>(for _: Act.Type) -> Bool
         where Act: DistributedActor, Act.ID == ActorIdentity
     {
         type == "\(Act.self)"
     }
-    
+
     public var description: String {
         guard let type else { return id }
         return "\(id) \(type)"
     }
-    
+
     public var debugDescription: String {
         "\(Self.self)(\(description))"
     }
@@ -89,7 +90,7 @@ extension ActorIdentity: Hashable, Equatable {
     public func hash(into hasher: inout Hasher) {
         id.hash(into: &hasher)
     }
-    
+
     public static func == (lhs: ActorIdentity, rhs: ActorIdentity) -> Bool {
         lhs.id == rhs.id
     }

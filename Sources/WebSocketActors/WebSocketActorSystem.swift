@@ -81,36 +81,38 @@ public final class WebSocketActorSystem: DistributedActorSystem,
     public typealias InvocationEncoder = NIOInvocationEncoder
     public typealias InvocationDecoder = NIOInvocationDecoder
     public typealias SerializationRequirement = any Codable
-    
+
     typealias OnDemandResolveHandler = (ActorID) -> (any DistributedActor)?
-    
+
     public static let defaultLogger = Logger(label: "WebSocketActors")
-    
+
     public let nodeID: NodeIdentity
     public let logger: Logger
     private let pendingReplies = PendingReplies()
     let mode: WebSocketActorSystemMode
-    
+
     /// The ``manager`` encapsulates the differences between the client and the server.
     /// It opens communications with other nodes and maps NodeIDs to RemoteNodes.
     ///
     /// Although this is a `var`, it is set during initialization and never changed.
     /// It is only a var to solve initialization problems.
     private var manager: Manager!
-    
+
     /// The ``lock`` limits access to `managedActors` and `resolveOnDemandHandler`.
     /// These properties are used in synchronous code, and the lock makes them thread-safe.
     private let lock = NSLock()
     private var managedActors: [ActorID: any DistributedActor] = [:]
     private var resolveOnDemandHandler: OnDemandResolveHandler?
-    
+
     public var monitor: ResilientTask.MonitorFunction?
 
-    public init(mode: WebSocketActorSystemMode, id: NodeIdentity = .random(), logger: Logger = defaultLogger) async throws {
+    public init(mode: WebSocketActorSystemMode, id: NodeIdentity = .random(),
+                logger: Logger = defaultLogger) async throws
+    {
         nodeID = id
         self.logger = logger
         self.mode = mode
-        
+
         // Start networking
         switch mode {
         case .client(let address):
@@ -122,11 +124,11 @@ public final class WebSocketActorSystem: DistributedActorSystem,
             logger.info("server listening at \(realAddress)")
         }
     }
-    
+
     public func localPort() async throws -> Int {
         try await manager.localPort()
     }
-    
+
     public func address() async throws -> ServerAddress {
         switch mode {
         case .client(let serverAddress):
@@ -135,12 +137,12 @@ public final class WebSocketActorSystem: DistributedActorSystem,
             try await address.with(port: manager.localPort())
         }
     }
-    
+
     func dispatchIncomingFrames(channel: WebSocketAgentChannel, remoteNodeID: NodeIdentity) async throws {
         try await RemoteNode.withRemoteNode(nodeID: remoteNodeID, channel: channel) { remoteNode in
             logger.trace("opened remoteNode for \(mode) on \(TaskPath.current)")
             await manager.opened(remote: remoteNode)
-            
+
             try await TaskPath.with(name: "remoteNode") {
                 for try await frame in remoteNode.inbound {
                     switch frame.opcode {
@@ -151,7 +153,7 @@ public final class WebSocketActorSystem: DistributedActorSystem,
                         // went away, so it can terminate any tasks or actors working to
                         // inform the remote receptionist on the now-gone system about our
                         // actors.
-                        
+
                         // This is an unsolicited close. We're going to send a response frame and
                         // then, when we've sent it, close up shop. We should send back the close code the remote
                         // peer sent us, unless they didn't send one at all.
@@ -160,26 +162,27 @@ public final class WebSocketActorSystem: DistributedActorSystem,
                         let closeDataCode = data.readSlice(length: 2) ?? ByteBuffer()
                         let closeFrame = WebSocketFrame(fin: true, opcode: .connectionClose, data: closeDataCode)
                         try await remoteNode.outbound.write(closeFrame)
-                        
+
                     case .text:
                         var data = frame.unmaskedData
                         let text = data.getString(at: 0, length: data.readableBytes) ?? ""
-                        self.logger.withOp().trace("Received: \(text), from: \(String(describing: channel.channel.remoteAddress))")
-                        
+                        self.logger.withOp()
+                            .trace("Received: \(text), from: \(String(describing: channel.channel.remoteAddress))")
+
                         await self.decodeAndDeliver(data: &data, from: remoteNode)
-                        
+
                     case .ping:
                         logger.trace("Received ping")
                         var frameData = frame.data
                         let maskingKey = frame.maskKey
-                        
+
                         if let maskingKey {
                             frameData.webSocketUnmask(maskingKey)
                         }
-                        
+
                         let responseFrame = WebSocketFrame(fin: true, opcode: .pong, data: frameData)
                         try await remoteNode.outbound.write(responseFrame)
-                        
+
                     case .binary, .continuation, .pong:
                         // We ignore these frames.
                         break
@@ -193,7 +196,7 @@ public final class WebSocketActorSystem: DistributedActorSystem,
             await manager.closing(remote: remoteNode)
         }
     }
-    
+
     public func shutdownGracefully() async {
         await manager.cancel()
     }
@@ -259,7 +262,7 @@ public final class WebSocketActorSystem: DistributedActorSystem,
 
     // Trick to allow resolve() re-entrancy while still holding the `lock`
     @TaskLocal private static var alreadyLocked: Bool = false
-    
+
     /// Attempt to resolve the `id` to a local actor.
     /// Returns `nil` if the id cannot be resolved locally, which implies the id
     /// represents a remote actor.
@@ -274,14 +277,14 @@ public final class WebSocketActorSystem: DistributedActorSystem,
                 lock.unlock()
             }
         }
-        
+
         let taggedLogger = logger.with(id).withOp()
-        
+
         guard let found = managedActors[id] else {
             taggedLogger.trace("not found locally")
             if let resolveOnDemand = resolveOnDemandHandler {
                 taggedLogger.trace("resolve on demand")
-                
+
                 let resolvedOnDemandActor = Self.$alreadyLocked.withValue(true) {
                     resolveOnDemand(id)
                 }
@@ -300,15 +303,15 @@ public final class WebSocketActorSystem: DistributedActorSystem,
                     taggedLogger.trace("resolve on demand")
                 }
             }
-            
+
             taggedLogger.trace("resolved as remote")
             return nil // definitely remote, we don't know about this ActorID
         }
-        
+
         guard let wellTyped = found as? Act else {
             throw WebSocketActorSystemError.resolveFailedToMatchActorType(found: type(of: found), expected: Act.self)
         }
-        
+
         logger.trace("RESOLVED LOCAL: \(wellTyped)")
         return wellTyped
     }
@@ -316,7 +319,7 @@ public final class WebSocketActorSystem: DistributedActorSystem,
     func resolveAny(id: ActorID) -> (any DistributedActor)? {
         lock.lock()
         defer { lock.unlock() }
-        
+
         let taggedLogger = logger.with(id).withOp()
 
         guard let resolved = managedActors[id] else {
@@ -371,7 +374,7 @@ public extension WebSocketActorSystem {
             factory()
         }
     }
-    
+
     /// Create a local actor with a random id prefixed with the actor's type.
     func makeLocalActor<Act>(_ factory: () -> Act) -> Act
         where Act: DistributedActor, Act.ActorSystem == WebSocketActorSystem
@@ -386,7 +389,7 @@ extension WebSocketActorSystem {
     func decodeAndDeliver(data: inout ByteBuffer, from remote: RemoteNode) async {
         let decoder = JSONDecoder()
         decoder.userInfo[.actorSystemKey] = self
-        
+
         let taggedLogger = logger.withOp()
 
         do {
@@ -429,12 +432,10 @@ extension WebSocketActorSystem {
                 var decoder = NIOInvocationDecoder(system: self, envelope: envelope)
                 func doExecuteDistributedTarget<Act: DistributedActor>(recipient: Act) async throws {
                     taggedLogger.trace("executeDistributedTarget")
-                    try await executeDistributedTarget(
-                        on: recipient,
-                        target: target,
-                        invocationDecoder: &decoder,
-                        handler: handler
-                    )
+                    try await executeDistributedTarget(on: recipient,
+                                                       target: target,
+                                                       invocationDecoder: &decoder,
+                                                       handler: handler)
                 }
 
                 // As implicit opening of existential becomes part of the language,
@@ -444,7 +445,8 @@ extension WebSocketActorSystem {
                 try await _openExistential(anyRecipient, do: doExecuteDistributedTarget)
             }
             catch {
-                taggedLogger.error("failed to executeDistributedTarget [\(target)] on [\(anyRecipient)], error: \(error)")
+                taggedLogger
+                    .error("failed to executeDistributedTarget [\(target)] on [\(anyRecipient)], error: \(error)")
                 try! await handler.onThrow(error: error)
             }
         }
@@ -461,13 +463,13 @@ extension WebSocketActorSystem {
 // - MARK: RemoteCall implementations
 
 public extension WebSocketActorSystem {
-    func remoteCall<Act, Err, Res>(
-        on actor: Act,
-        target: RemoteCallTarget,
-        invocation: inout InvocationEncoder,
-        throwing _: Err.Type,
-        returning _: Res.Type
-    ) async throws -> Res where Act: DistributedActor, Act.ID == ActorID, Err: Error, Res: Codable {
+    func remoteCall<Act, Err, Res>(on actor: Act,
+                                   target: RemoteCallTarget,
+                                   invocation: inout InvocationEncoder,
+                                   throwing _: Err.Type,
+                                   returning _: Res.Type) async throws -> Res where Act: DistributedActor,
+        Act.ID == ActorID, Err: Error, Res: Codable
+    {
         let taggedLogger = logger.withOp().with(actor.id).with(target)
         taggedLogger.info("remoteCall")
         taggedLogger.trace("Call to: \(actor.id), target: \(target), target.identifier: \(target.identifier)")
@@ -475,23 +477,21 @@ public extension WebSocketActorSystem {
         let remoteNode = try await manager.remoteNode(for: actor.id)
 
         taggedLogger.trace("Prepare [\(target)] call...")
-        
+
         let localInvocation = invocation
-        
+
         let replyData = try await pendingReplies.sendMessage { callID in
-            let callEnvelope = RemoteWebSocketCallEnvelope(
-                callID: callID,
-                recipient: actor.id,
-                invocationTarget: target.identifier,
-                genericSubs: localInvocation.genericSubs,
-                args: localInvocation.argumentData
-            )
+            let callEnvelope = RemoteWebSocketCallEnvelope(callID: callID,
+                                                           recipient: actor.id,
+                                                           invocationTarget: target.identifier,
+                                                           genericSubs: localInvocation.genericSubs,
+                                                           args: localInvocation.argumentData)
             let wireEnvelope = WebSocketWireEnvelope.call(callEnvelope)
 
             taggedLogger.trace("Write envelope: \(wireEnvelope)")
-            
+
 //            let frame = WebSocketFrame(opcode: .text, data: try JSONEncoder().encode(wireEnvelope))
-            
+
             try await remoteNode.write(actorSystem: self, envelope: wireEnvelope)
         }
 
@@ -506,37 +506,35 @@ public extension WebSocketActorSystem {
         }
     }
 
-    func remoteCallVoid<Act, Err>(
-        on actor: Act,
-        target: RemoteCallTarget,
-        invocation: inout InvocationEncoder,
-        throwing _: Err.Type
-    ) async throws where Act: DistributedActor, Act.ID == ActorID, Err: Error {
+    func remoteCallVoid<Act, Err>(on actor: Act,
+                                  target: RemoteCallTarget,
+                                  invocation: inout InvocationEncoder,
+                                  throwing _: Err.Type) async throws where Act: DistributedActor, Act.ID == ActorID,
+        Err: Error
+    {
         let taggedLogger = logger.withOp().with(actor.id)
         taggedLogger.trace("Call to: \(actor.id), target: \(target), target.identifier: \(target.identifier)")
-        
+
         let remoteNode = try await manager.remoteNode(for: actor.id)
         let localInvocation = invocation
-        
+
         taggedLogger.trace("Prepare [\(target)] call...")
         _ = try await pendingReplies.sendMessage { callID in
-            let callEnvelope = RemoteWebSocketCallEnvelope(
-                callID: callID,
-                recipient: actor.id,
-                invocationTarget: target.identifier,
-                genericSubs: localInvocation.genericSubs,
-                args: localInvocation.argumentData
-            )
+            let callEnvelope = RemoteWebSocketCallEnvelope(callID: callID,
+                                                           recipient: actor.id,
+                                                           invocationTarget: target.identifier,
+                                                           genericSubs: localInvocation.genericSubs,
+                                                           args: localInvocation.argumentData)
             let wireEnvelope = WebSocketWireEnvelope.call(callEnvelope)
-            
+
             taggedLogger.trace("Write envelope: \(wireEnvelope)")
-            
+
             try await remoteNode.write(actorSystem: self, envelope: wireEnvelope)
         }
-        
+
         taggedLogger.trace("COMPLETED CALL: \(target)")
     }
-    
+
     internal func write(remote: RemoteNode,
                         envelope: WebSocketWireEnvelope) async throws
     {
@@ -611,20 +609,20 @@ public enum WebSocketActorSystemError: Error, DistributedActorSystemError {
     case failedDecodingResponse(data: Data, error: Error)
     case decodingError(error: Error)
     case resolveFailed(id: WebSocketActorSystem.ActorID)
-    
+
     /// We are trying to send a message to a remote actor, but that actor does not
     /// have a NodeIdentity. This probably means that the remote node passed us an actor
     /// that was not constructed using the `WebSocketActorSystem.makeActor(id:_:)`,
     /// as it should have been.
     case missingNodeID(id: WebSocketActorSystem.ActorID)
-    
+
     /// We are trying to send a message to a remote actor, but we do not currently
     /// have an open `Channel` to the remote node. This is currently an error.
     /// Future versions of this library may attempt to reconnect to the remote node
     /// instead of throwing this error.
     case noRemoteNode(id: NodeIdentity)
-    
+
     case failedToUpgrade
-    
+
     case missingReplyContinuation(callID: UUID)
 }

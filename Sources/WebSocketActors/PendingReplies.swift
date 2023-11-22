@@ -10,27 +10,27 @@ import Logging
 
 actor PendingReplies {
     private var callContinuations: [CallID: CheckedContinuation<Data, Error>] = [:]
-    
+
     func expectReply(continuation: CheckedContinuation<Data, Error>) -> UUID {
         let callID = UUID()
         callContinuations[callID] = continuation
         return callID
     }
-    
+
     func receivedReply(callID: CallID, data: Data) throws {
         guard let continuation = callContinuations.removeValue(forKey: callID) else {
             throw WebSocketActorSystemError.missingReplyContinuation(callID: callID)
         }
         continuation.resume(returning: data)
     }
-    
+
     func receivedError(callID: CallID, error: Error) throws {
         guard let continuation = callContinuations.removeValue(forKey: callID) else {
             throw WebSocketActorSystemError.missingReplyContinuation(callID: callID)
         }
         continuation.resume(throwing: error)
     }
-    
+
     nonisolated func sendMessage(_ body: @escaping (CallID) async throws -> Void) async throws -> Data {
         try await withCheckedThrowingContinuation { continuation in
             Task {

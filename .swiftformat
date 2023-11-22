@@ -9,8 +9,10 @@
 --decimalgrouping 3,6
 --patternlet inline
 --semicolons never
---trimwhitespace nonblank-lines
+--trimwhitespace always
+--maxwidth 120
 --wrapcollections before-first
+--wraparguments after-first
 
 # This rule breaks DistributedActorSystem.remoteCall,
 # which has hidden protocol requirements.
