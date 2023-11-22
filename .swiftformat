@@ -1,0 +1,18 @@
+--swiftversion 5.9.1
+
+--binarygrouping none
+--commas always
+--decimalgrouping none
+--elseposition next-line
+--hexgrouping 4,8
+--octalgrouping none
+--decimalgrouping 3,6
+--patternlet inline
+--semicolons never
+--trimwhitespace nonblank-lines
+--wrapcollections before-first
+
+# This rule breaks DistributedActorSystem.remoteCall,
+# which has hidden protocol requirements.
+
+--disable opaqueGenericParameters

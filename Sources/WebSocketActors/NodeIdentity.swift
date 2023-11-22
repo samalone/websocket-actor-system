@@ -1,6 +1,6 @@
 //
 //  NodeIdentity.swift
-//  
+//
 //
 //  Created by Stuart A. Malone on 11/6/23.
 //
@@ -38,7 +38,7 @@ extension NodeIdentity: Codable {
 
 extension NodeIdentity: ExpressibleByStringLiteral {
     public init(stringLiteral value: String) {
-        self.id = value
+        id = value
     }
 }
 

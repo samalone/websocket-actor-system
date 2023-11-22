@@ -1,12 +1,12 @@
 /*
-See LICENSE folder for this sample’s licensing information.
+ See LICENSE folder for this sample’s licensing information.
 
-Abstract:
-Used as `ActorID` by all distributed actors in this sample app. It is used to uniquely identify any given actor within its actor system.
-*/
+ Abstract:
+ Used as `ActorID` by all distributed actors in this sample app. It is used to uniquely identify any given actor within its actor system.
+ */
 
-import Foundation
 import Distributed
+import Foundation
 import NIO
 import NIOWebSocket
 
@@ -50,19 +50,19 @@ public struct ActorIdentity: Sendable, Encodable, CustomStringConvertible, Custo
     }
     
     /// Create a random ActorIdentity with a prefix based on the provided type.
-    public static func random<Act>(for actorType: Act.Type, node: NodeIdentity? = nil) -> Self
-    where Act: DistributedActor, Act.ID == ActorIdentity
+    public static func random<Act>(for _: Act.Type, node: NodeIdentity? = nil) -> Self
+        where Act: DistributedActor, Act.ID == ActorIdentity
     {
         .random(type: "\(Act.self)", node: node)
     }
     
-    internal func with(_ nodeID: NodeIdentity) -> ActorIdentity {
+    func with(_ nodeID: NodeIdentity) -> ActorIdentity {
         ActorIdentity(id: id, type: type, node: nodeID)
     }
     
     /// Does this id have the proper prefix for the provided type?
-    public func hasType<Act>(for actorType: Act.Type) -> Bool
-    where Act: DistributedActor, Act.ID == ActorIdentity
+    public func hasType<Act>(for _: Act.Type) -> Bool
+        where Act: DistributedActor, Act.ID == ActorIdentity
     {
         type == "\(Act.self)"
     }
@@ -73,15 +73,15 @@ public struct ActorIdentity: Sendable, Encodable, CustomStringConvertible, Custo
     }
     
     public var debugDescription: String {
-        "\(Self.self)(\(self.description))"
+        "\(Self.self)(\(description))"
     }
 }
 
 extension ActorIdentity: ExpressibleByStringLiteral {
     public init(stringLiteral value: String) {
-        self.id = value
-        self.type = nil
-        self.node = nil
+        id = value
+        type = nil
+        node = nil
     }
 }
 
@@ -90,7 +90,7 @@ extension ActorIdentity: Hashable, Equatable {
         id.hash(into: &hasher)
     }
     
-    public static func ==(lhs: ActorIdentity, rhs: ActorIdentity) -> Bool {
+    public static func == (lhs: ActorIdentity, rhs: ActorIdentity) -> Bool {
         lhs.id == rhs.id
     }
 }
@@ -98,8 +98,8 @@ extension ActorIdentity: Hashable, Equatable {
 extension ActorIdentity: Decodable {
     public init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
-        self.id = try values.decode(String.self, forKey: .id)
-        self.node = try values.decodeIfPresent(NodeIdentity.self, forKey: .node)
-        self.type = try values.decodeIfPresent(String.self, forKey: .type)
+        id = try values.decode(String.self, forKey: .id)
+        node = try values.decodeIfPresent(NodeIdentity.self, forKey: .node)
+        type = try values.decodeIfPresent(String.self, forKey: .type)
     }
 }

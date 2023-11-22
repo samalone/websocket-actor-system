@@ -1,17 +1,17 @@
 /*
-See LICENSE folder for this sample’s licensing information.
+ See LICENSE folder for this sample’s licensing information.
 
-Abstract:
-Client side implementation of the WebSocket Actor System.
-*/
+ Abstract:
+ Client side implementation of the WebSocket Actor System.
+ */
 
 import Distributed
 import Foundation
 import NIO
+import NIOAsyncWebSockets
+import NIOFoundationCompat
 import NIOHTTP1
 import NIOWebSocket
-import NIOFoundationCompat
-import NIOAsyncWebSockets
 
 #if canImport(Network)
     import NIOTransportServices
@@ -31,10 +31,10 @@ extension HTTPHeaders {
         }
         set {
             if let newValue {
-                self.replaceOrAdd(name: HTTPHeaders.nodeIdKey, value: newValue.id)
+                replaceOrAdd(name: HTTPHeaders.nodeIdKey, value: newValue.id)
             }
             else {
-                self.remove(name: HTTPHeaders.nodeIdKey)
+                remove(name: HTTPHeaders.nodeIdKey)
             }
         }
     }
@@ -44,9 +44,7 @@ extension HTTPHeaders {
 // - MARK: Client-side networking stack
 
 extension WebSocketActorSystem {
-    
     private actor ClientManager: Manager {
-        
         enum UpgradeResult {
             case websocket(ServerConnection)
             case notUpgraded
@@ -57,11 +55,11 @@ extension WebSocketActorSystem {
         private var remoteNode: RemoteNode? = nil
         private var waitingForRemoteNode: [CheckedContinuation<RemoteNode, Never>] = []
         
-#if canImport(Network)
-        static let group = NIOTSEventLoopGroup.singleton
-#else
-        static let group = MultiThreadedEventLoopGroup.singleton
-#endif
+        #if canImport(Network)
+            static let group = NIOTSEventLoopGroup.singleton
+        #else
+            static let group = MultiThreadedEventLoopGroup.singleton
+        #endif
         
         struct ServerConnection {
             var channel: WebSocketAgentChannel
@@ -82,7 +80,7 @@ extension WebSocketActorSystem {
         
         func connect(host: String, port: Int) {
             cancel()
-            task = ResilientTask(monitor: self.updateConnectionStatus(_:)) { initialized in
+            task = ResilientTask(monitor: updateConnectionStatus(_:)) { initialized in
                 try await TaskPath.with(name: "client connection") {
                     let serverConnection = try await self.openClientChannel(host: host, port: port)
                     self.system.logger.trace("got serverConnection to node \(serverConnection.nodeID) on \(TaskPath.current)")
@@ -93,23 +91,23 @@ extension WebSocketActorSystem {
         }
         
         func opened(remote: RemoteNode) async {
-            self.remoteNode = remote
+            remoteNode = remote
             for continuation in waitingForRemoteNode {
                 continuation.resume(returning: remote)
             }
             waitingForRemoteNode = []
         }
         
-        func closing(remote: RemoteNode) async {
-            self.remoteNode = nil
+        func closing(remote _: RemoteNode) async {
+            remoteNode = nil
         }
         
-        func remoteNode(for actorID: ActorIdentity) async throws -> RemoteNode {
+        func remoteNode(for _: ActorIdentity) async throws -> RemoteNode {
             if let remoteNode {
-                return remoteNode
+                remoteNode
             }
             else {
-                return await withCheckedContinuation { continuation in
+                await withCheckedContinuation { continuation in
                     Task {
                         waitingForRemoteNode.append(continuation)
                     }
@@ -152,7 +150,7 @@ extension WebSocketActorSystem {
                         upgraders: [upgrader],
                         notUpgradingCompletionHandler: { channel in
                             channel.eventLoop.makeCompletedFuture {
-                                return UpgradeResult.notUpgraded
+                                UpgradeResult.notUpgraded
                             }
                         }
                     )
@@ -174,7 +172,7 @@ extension WebSocketActorSystem {
         }
     }
     
-    internal func createClientManager(to address: ServerAddress) async -> Manager {
+    func createClientManager(to address: ServerAddress) async -> Manager {
         let manager = ClientManager(system: self)
         await manager.connect(host: address.host, port: address.port)
         return manager

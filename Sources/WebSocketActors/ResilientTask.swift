@@ -11,7 +11,6 @@ import Logging
 /// A `ResilientTask` tries to keep an action running continuously.
 /// If the action fails or exits, it is restarted after an adjustable delay.
 public struct ResilientTask {
-    
     /// A function that the action should call once it is successfully initialized.
     public typealias SuccessfulInitializationCallback = () async -> Void
     
@@ -49,7 +48,8 @@ public struct ResilientTask {
     /// - Parameter action: The action that is run continuously.
     public init(backoff: ExponentialBackoff = .standard,
                 monitor: MonitorFunction? = nil,
-                action: @escaping Action) {
+                action: @escaping Action)
+    {
         task = Task.detached {
             var iterator = backoff.makeIterator()
             while !Task.isCancelled {

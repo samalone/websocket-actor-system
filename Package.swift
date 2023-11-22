@@ -9,13 +9,14 @@ let package = Package(
         .macOS(.v13),
         .iOS(.v16),
         .watchOS(.v10),
-        .tvOS(.v17)
+        .tvOS(.v17),
     ],
     products: [
         // Products define the executables and libraries a package produces, making them visible to other packages.
         .library(
             name: "WebSocketActors",
-            targets: ["WebSocketActors"]),
+            targets: ["WebSocketActors"]
+        ),
     ],
     dependencies: [
         .package(url: "https://github.com/apple/swift-nio.git", from: "2.12.0"),
@@ -40,13 +41,15 @@ let package = Package(
                 .product(name: "NIOAsyncWebSockets", package: "nio-async-websockets"),
             ],
             swiftSettings: [
-                .unsafeFlags(["-Xfrontend", "-validate-tbd-against-ir=none"])
-            ]),
+                .unsafeFlags(["-Xfrontend", "-validate-tbd-against-ir=none"]),
+            ]
+        ),
         .testTarget(
             name: "WebSocketActorTests",
             dependencies: ["WebSocketActors"],
             swiftSettings: [
-                .unsafeFlags(["-Xfrontend", "-validate-tbd-against-ir=none"])
-            ]),
+                .unsafeFlags(["-Xfrontend", "-validate-tbd-against-ir=none"]),
+            ]
+        ),
     ]
 )

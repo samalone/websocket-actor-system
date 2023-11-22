@@ -1,9 +1,9 @@
 /*
-See LICENSE folder for this sample’s licensing information.
+ See LICENSE folder for this sample’s licensing information.
 
-Abstract:
-Invocation encoder into a NIO byte buffer.
-*/
+ Abstract:
+ Invocation encoder into a NIO byte buffer.
+ */
 
 import Distributed
 import Foundation
@@ -13,7 +13,7 @@ public class NIOInvocationEncoder: DistributedTargetInvocationEncoder {
     var genericSubs: [String] = []
     var argumentData: [Data] = []
 
-    public func recordGenericSubstitution<T>(_ type: T.Type) throws {
+    public func recordGenericSubstitution<T>(_: T.Type) throws {
         if let name = _mangledTypeName(T.self) {
             genericSubs.append(name)
         }
@@ -21,14 +21,14 @@ public class NIOInvocationEncoder: DistributedTargetInvocationEncoder {
 
     public func recordArgument<Value: Codable>(_ argument: RemoteCallArgument<Value>) throws {
         let data = try JSONEncoder().encode(argument.value)
-        self.argumentData.append(data)
+        argumentData.append(data)
     }
 
-    public func recordReturnType<R: Codable>(_ type: R.Type) throws {
+    public func recordReturnType<R: Codable>(_: R.Type) throws {
         // noop, no need to record it in this system
     }
 
-    public func recordErrorType<E: Error>(_ type: E.Type) throws {
+    public func recordErrorType<E: Error>(_: E.Type) throws {
         // noop, no need to record it in this system
     }
 

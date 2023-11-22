@@ -1,6 +1,6 @@
 //
-//  RemoteNodeConnection.swift
-//  
+//  RemoteNode.swift
+//
 //
 //  Created by Stuart A. Malone on 11/6/23.
 //
@@ -25,7 +25,8 @@ final class RemoteNode {
     private init(nodeID: NodeIdentity,
                  channel: WebSocketAgentChannel,
                  inbound: NIOAsyncChannelInboundStream<WebSocketFrame>,
-                 outbound: WebSocketOutbound) {
+                 outbound: WebSocketOutbound)
+    {
         self.nodeID = nodeID
         self.channel = channel
         self.inbound = inbound
@@ -38,8 +39,8 @@ final class RemoteNode {
             var data = channel.channel.allocator.buffer(capacity: 2)
             data.write(webSocketErrorCode: .protocolError)
             let frame = WebSocketFrame(fin: true,
-                opcode: .connectionClose,
-                data: data)
+                                       opcode: .connectionClose,
+                                       data: data)
             try await outbound.write(frame)
         case .reply, .call:
             let encoder = JSONEncoder()

@@ -1,19 +1,19 @@
-import XCTest
 import Distributed
 import Logging
 import NIO
 @testable import WebSocketActors
+import XCTest
 
 typealias DefaultDistributedActorSystem = WebSocketActorSystem
 
 distributed actor Person {
     private var _lastGift = "nothing"
     private var _name: String
-    var neighbor: Person? = nil
+    var neighbor: Person?
     
     init(actorSystem: WebSocketActorSystem, name: String) {
         self.actorSystem = actorSystem
-        self._name = name
+        _name = name
     }
     
     distributed var lastGift: String {
@@ -29,7 +29,7 @@ distributed actor Person {
     }
     
     distributed func addOne(_ n: Int) -> Int {
-        return n + 1
+        n + 1
     }
     
     distributed func howdy(from: Person) async throws -> String {
@@ -81,8 +81,8 @@ final class WebsocketActorSystemTests: XCTestCase {
     
     override func setUp() async throws {
         server = try await WebSocketActorSystem(mode: .server(at: serverAddress),
-                                          id: "server",
-                                          logger: Logger(label: "\(name) server").with(level: .trace))
+                                                id: "server",
+                                                logger: Logger(label: "\(name) server").with(level: .trace))
         // Now that the server is started, we can find out what port number it is using.
         serverAddress = try await server.address()
     }
@@ -92,7 +92,7 @@ final class WebsocketActorSystemTests: XCTestCase {
     }
     
     func testLocalCall() async throws {
-        let alice = server.makeLocalActor() {
+        let alice = server.makeLocalActor {
             Person(actorSystem: server, name: "Alice")
         }
         
@@ -101,11 +101,11 @@ final class WebsocketActorSystemTests: XCTestCase {
     }
     
     func testLocalCallback() async throws {
-        let alice = server.makeLocalActor() {
+        let alice = server.makeLocalActor {
             Person(actorSystem: server, name: "Alice")
         }
         
-        let bob = server.makeLocalActor() {
+        let bob = server.makeLocalActor {
             Person(actorSystem: server, name: "Bob")
         }
         
@@ -127,7 +127,6 @@ final class WebsocketActorSystemTests: XCTestCase {
             // Create a local reference to Alice on the client
             let clientAlice = try Person.resolve(id: .alice, using: client)
             
-
             // Send Alice a message without needing a reply
             try await clientAlice.receiveGift("mandrake")
             // Make sure Alice received the gift.
@@ -166,7 +165,7 @@ final class WebsocketActorSystemTests: XCTestCase {
     
 //    func testResilientTask() async throws {
 //        var retryCount = -1
-//        
+//
 //        func monitor(status: ResilientTask.Status) {
 //            switch status {
 //            case .initializing:
@@ -181,7 +180,7 @@ final class WebsocketActorSystemTests: XCTestCase {
 //                print("failed with \(error)")
 //            }
 //        }
-//        
+//
 //        let action = ResilientTask(monitor: monitor) { initializationSuccessful in
 //            retryCount = (retryCount + 1) % 3
 //            print("retryCount = \(retryCount)")
@@ -191,9 +190,9 @@ final class WebsocketActorSystemTests: XCTestCase {
 //            await initializationSuccessful()
 //            try await Task.sleep(for: .seconds(20))
 //        }
-//        
+//
 //        try await Task.sleep(for: .seconds(120))
-//        
+//
 //        action.cancel()
 //    }
 }

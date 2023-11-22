@@ -8,13 +8,12 @@
 import Distributed
 import Foundation
 import NIO
+import NIOAsyncWebSockets
 import NIOHTTP1
 import NIOWebSocket
-import NIOAsyncWebSockets
 
 // ==== ----------------------------------------------------------------------------------------------------------------
 // - MARK: Server-side networking stack
-
 
 let websocketResponse = """
 <!DOCTYPE html>
@@ -44,7 +43,6 @@ let websocketResponse = """
 /// with a uniform interface to clients and servers, so that certain universal
 /// operations can be performed without caring which mode the actor system is in.
 protocol Manager {
-    
     /// Return the local port number. For the server, this is the port it is listening on.
     /// For a client, this is the (less important) local port number it is connecting from.
     ///
@@ -121,12 +119,12 @@ extension WebSocketActorSystem {
             waitingForChannel.removeAll()
         }
         
-        internal func requireChannel() async throws  -> ServerMasterChannel {
+        func requireChannel() async throws -> ServerMasterChannel {
             if let channel = _channel {
-                return channel
+                channel
             }
             else {
-                return await withCheckedContinuation { continuation in
+                await withCheckedContinuation { continuation in
                     waitingForChannel.append(continuation)
                 }
             }
@@ -136,9 +134,9 @@ extension WebSocketActorSystem {
             if let status = remoteNodes[nodeID] {
                 switch status {
                 case .current(let node):
-                    return node
+                    node
                 case .future(let continuations):
-                    return await withCheckedContinuation { continuation in
+                    await withCheckedContinuation { continuation in
                         Task {
                             remoteNodes[nodeID] = .future(continuations + [continuation])
                         }
@@ -146,7 +144,7 @@ extension WebSocketActorSystem {
                 }
             }
             else {
-                return await withCheckedContinuation { continuation in
+                await withCheckedContinuation { continuation in
                     Task {
                         remoteNodes[nodeID] = .future([continuation])
                     }
@@ -156,7 +154,7 @@ extension WebSocketActorSystem {
         
         func opened(remote: RemoteNode) {
             let nodeID = remote.nodeID
-            if let status = remoteNodes[nodeID], case let .future(continuations) = status {
+            if let status = remoteNodes[nodeID], case .future(let continuations) = status {
                 remoteNodes[nodeID] = .current(remote)
                 for continuation in continuations {
                     continuation.resume(returning: remote)
@@ -179,7 +177,7 @@ extension WebSocketActorSystem {
         
         func connect(host: String, port: Int) {
             cancel()
-            _task = ResilientTask() { initialized in
+            _task = ResilientTask { initialized in
                 
                 try await TaskPath.with(name: "server connection") {
                     let channel = try await self.openServerChannel(host: host, port: port)
@@ -195,7 +193,7 @@ extension WebSocketActorSystem {
                     // would result in a memory leak over time.
                     if #available(macOS 14.0, iOS 17.0, watchOS 10.0, tvOS 17.0, *) {
                         try await withThrowingDiscardingTaskGroup { group in
-                            try await channel.executeThenClose { inbound, outbound in
+                            try await channel.executeThenClose { inbound, _ in
                                 for try await upgradeResult in inbound {
                                     group.addTask {
                                         await self.system.handleUpgradeResult(upgradeResult)
@@ -203,10 +201,11 @@ extension WebSocketActorSystem {
                                 }
                             }
                         }
-                    } else {
+                    }
+                    else {
                         // Fallback on earlier versions
                         try await withThrowingTaskGroup(of: Void.self) { group in
-                            try await channel.executeThenClose { inbound, outbound in
+                            try await channel.executeThenClose { inbound, _ in
                                 for try await upgradeResult in inbound {
                                     group.addTask {
                                         await self.system.handleUpgradeResult(upgradeResult)
@@ -228,14 +227,14 @@ extension WebSocketActorSystem {
                 ) { channel in
                     channel.eventLoop.makeCompletedFuture {
                         let upgrader = NIOAsyncWebSockets.NIOTypedWebSocketServerUpgrader<ServerUpgradeResult>(
-                            shouldUpgrade: { (channel, head) in
+                            shouldUpgrade: { channel, _ in
 //                                guard head.headers.nodeID != nil else {
 //                                    return channel.eventLoop.makeSucceededFuture(nil)
 //                                }
-                                return channel.eventLoop.makeSucceededFuture(HTTPHeaders())
+                                channel.eventLoop.makeSucceededFuture(HTTPHeaders())
                             },
-                            upgradePipelineHandler: { (channel, requestHead) in
-                                return channel.eventLoop.makeCompletedFuture {
+                            upgradePipelineHandler: { channel, requestHead in
+                                channel.eventLoop.makeCompletedFuture {
                                     let remoteNodeID = requestHead.headers.nodeID!
                                     let asyncChannel = try WebSocketAgentChannel(wrappingChannelSynchronously: channel)
                                     return ServerUpgradeResult.websocket(asyncChannel, remoteNodeID)
@@ -264,14 +263,14 @@ extension WebSocketActorSystem {
         }
     }
     
-    internal func createServerManager(at address: ServerAddress) async -> Manager {
+    func createServerManager(at address: ServerAddress) async -> Manager {
         let server = ServerManager(system: self)
         await server.connect(host: address.host, port: address.port)
         return server
     }
     
     /// This method handles a single connection by echoing back all inbound data.
-    internal func handleUpgradeResult(_ upgradeResult: EventLoopFuture<ServerUpgradeResult>) async {
+    func handleUpgradeResult(_ upgradeResult: EventLoopFuture<ServerUpgradeResult>) async {
         // Note that this method is non-throwing and we are catching any error.
         // We do this since we don't want to tear down the whole server when a single connection
         // encounters an error.
@@ -279,19 +278,19 @@ extension WebSocketActorSystem {
             switch try await upgradeResult.get() {
             case .websocket(let websocketChannel, let remoteNodeID):
                 logger.trace("Handling websocket connection")
-                try await self.handleWebsocketChannel(websocketChannel, remoteNodeID: remoteNodeID)
+                try await handleWebsocketChannel(websocketChannel, remoteNodeID: remoteNodeID)
                 logger.trace("Done handling websocket connection")
             case .notUpgraded(let httpChannel):
                 logger.trace("Handling HTTP connection")
                 try await handleHTTPChannel(httpChannel)
                 logger.trace("Done handling HTTP connection")
             }
-        } catch {
+        }
+        catch {
             logger.error("Hit error: \(error)")
         }
     }
 
-    
     private func handleWebsocketChannel(_ channel: WebSocketAgentChannel, remoteNodeID: NodeIdentity) async throws {
         let taggedLogger = logger.withOp().with(channel)
         taggedLogger.info("new client connection")
@@ -308,7 +307,7 @@ extension WebSocketActorSystem {
         taggedLogger.info("client connection closed")
     }
     
-    internal func closeOnError(channel: WebSocketAgentChannel) async {
+    func closeOnError(channel: WebSocketAgentChannel) async {
         // We have hit an error, we want to close. We do that by sending a close frame and then
         // shutting down the write side of the connection.
         var data = channel.channel.allocator.buffer(capacity: 2)
@@ -360,7 +359,7 @@ extension WebSocketActorSystem {
                     contentsOf: [
                         .head(responseHead),
                         .body(Self.responseBody),
-                        .end(nil)
+                        .end(nil),
                     ]
                 )
             }
@@ -380,7 +379,7 @@ extension WebSocketActorSystem {
         try await writer.write(
             contentsOf: [
                 .head(head),
-                .end(nil)
+                .end(nil),
             ]
         )
     }
@@ -391,14 +390,14 @@ final class HTTPByteBufferResponsePartHandler: ChannelOutboundHandler {
     typealias OutboundOut = HTTPServerResponsePart
 
     func write(context: ChannelHandlerContext, data: NIOAny, promise: EventLoopPromise<Void>?) {
-        let part = self.unwrapOutboundIn(data)
+        let part = unwrapOutboundIn(data)
         switch part {
         case .head(let head):
-            context.write(self.wrapOutboundOut(.head(head)), promise: promise)
+            context.write(wrapOutboundOut(.head(head)), promise: promise)
         case .body(let buffer):
-            context.write(self.wrapOutboundOut(.body(.byteBuffer(buffer))), promise: promise)
+            context.write(wrapOutboundOut(.body(.byteBuffer(buffer))), promise: promise)
         case .end(let trailers):
-            context.write(self.wrapOutboundOut(.end(trailers)), promise: promise)
+            context.write(wrapOutboundOut(.end(trailers)), promise: promise)
         }
     }
 }

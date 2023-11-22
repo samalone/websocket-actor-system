@@ -14,27 +14,27 @@ public enum ServerScheme: Hashable, Sendable, Codable, Equatable {
     public var socketScheme: String {
         switch self {
         case .secure:
-            return "wss"
+            "wss"
         case .insecure:
-            return "ws"
+            "ws"
         }
     }
     
     public var port: Int {
         switch self {
         case .secure:
-            return 443
+            443
         case .insecure:
-            return 80
+            80
         }
     }
     
     public var webScheme: String {
         switch self {
         case .secure:
-            return "https"
+            "https"
         case .insecure:
-            return "http"
+            "http"
         }
     }
 }
@@ -54,7 +54,8 @@ public struct ServerAddress: Hashable, Sendable, Codable, Equatable {
     public init(scheme: ServerScheme,
                 host: String = "localhost",
                 port: Int = -1,
-                path: String = "/") {
+                path: String = "/")
+    {
         self.scheme = scheme
         self.host = host
         self.port = (port < 0) ? scheme.port : port

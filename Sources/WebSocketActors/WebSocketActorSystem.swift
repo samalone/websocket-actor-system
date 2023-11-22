@@ -1,16 +1,15 @@
 /*
-See LICENSE folder for this sample’s licensing information.
+ See LICENSE folder for this sample’s licensing information.
 
-Abstract:
-WebSocket based client/server style actor system implementation.
-*/
-
+ Abstract:
+ WebSocket based client/server style actor system implementation.
+ */
 
 import Distributed
 import Foundation
+import Logging
 import NIO
 import NIOWebSocket
-import Logging
 
 #if canImport(Network)
     import NIOTransportServices
@@ -74,10 +73,9 @@ public enum WebSocketActorSystemMode {
 /// - term `.trace`: Detailed information about the internals of the ``WebSocketActors``
 ///   implementation.
 
-
 public final class WebSocketActorSystem: DistributedActorSystem,
-    @unchecked /* state protected with locks */ Sendable {
-
+    @unchecked /* state protected with locks */ Sendable
+{
     public typealias ActorID = ActorIdentity
     public typealias ResultHandler = WebSocketActorSystemResultHandler
     public typealias InvocationEncoder = NIOInvocationEncoder
@@ -104,22 +102,22 @@ public final class WebSocketActorSystem: DistributedActorSystem,
     /// These properties are used in synchronous code, and the lock makes them thread-safe.
     private let lock = NSLock()
     private var managedActors: [ActorID: any DistributedActor] = [:]
-    private var resolveOnDemandHandler: OnDemandResolveHandler? = nil
+    private var resolveOnDemandHandler: OnDemandResolveHandler?
     
-    public var monitor: ResilientTask.MonitorFunction? = nil
+    public var monitor: ResilientTask.MonitorFunction?
 
     public init(mode: WebSocketActorSystemMode, id: NodeIdentity = .random(), logger: Logger = defaultLogger) async throws {
-        self.nodeID = id
+        nodeID = id
         self.logger = logger
         self.mode = mode
         
         // Start networking
         switch mode {
         case .client(let address):
-            self.manager = await createClientManager(to: address)
+            manager = await createClientManager(to: address)
             logger.info("client connected to \(address)")
         case .server(let address):
-            self.manager = await createServerManager(at: address)
+            manager = await createServerManager(at: address)
             let realAddress = try await self.address()
             logger.info("server listening at \(realAddress)")
         }
@@ -132,9 +130,9 @@ public final class WebSocketActorSystem: DistributedActorSystem,
     public func address() async throws -> ServerAddress {
         switch mode {
         case .client(let serverAddress):
-            return serverAddress
+            serverAddress
         case .server(let address):
-            return try await address.with(port: manager.localPort())
+            try await address.with(port: manager.localPort())
         }
     }
     
@@ -175,7 +173,7 @@ public final class WebSocketActorSystem: DistributedActorSystem,
                         var frameData = frame.data
                         let maskingKey = frame.maskKey
                         
-                        if let maskingKey = maskingKey {
+                        if let maskingKey {
                             frameData.webSocketUnmask(maskingKey)
                         }
                         
@@ -213,11 +211,11 @@ public final class WebSocketActorSystem: DistributedActorSystem,
                 }
             }
 
-            if let existingActor = self.managedActors[hintedID] {
+            if let existingActor = managedActors[hintedID] {
                 preconditionFailure("""
-                                    Illegal re-use of ActorID (\(hintedID))!
-                                    Already used by: \(existingActor), yet attempted to assign to \(actorType)!
-                                    """)
+                Illegal re-use of ActorID (\(hintedID))!
+                Already used by: \(existingActor), yet attempted to assign to \(actorType)!
+                """)
             }
 
             return hintedID
@@ -245,7 +243,7 @@ public final class WebSocketActorSystem: DistributedActorSystem,
             }
         }
 
-        self.managedActors[actor.id] = actor
+        managedActors[actor.id] = actor
     }
 
     /// Unregister the actors as a local actor.
@@ -256,7 +254,7 @@ public final class WebSocketActorSystem: DistributedActorSystem,
             lock.unlock()
         }
 
-        self.managedActors.removeValue(forKey: id)
+        managedActors.removeValue(forKey: id)
     }
 
     // Trick to allow resolve() re-entrancy while still holding the `lock`
@@ -265,8 +263,9 @@ public final class WebSocketActorSystem: DistributedActorSystem,
     /// Attempt to resolve the `id` to a local actor.
     /// Returns `nil` if the id cannot be resolved locally, which implies the id
     /// represents a remote actor.
-    public func resolve<Act>(id: ActorID, as actorType: Act.Type) throws -> Act?
-    where Act: DistributedActor, Act.ID == ActorID {
+    public func resolve<Act>(id: ActorID, as _: Act.Type) throws -> Act?
+        where Act: DistributedActor, Act.ID == ActorID
+    {
         if !Self.alreadyLocked {
             lock.lock()
         }
@@ -280,22 +279,24 @@ public final class WebSocketActorSystem: DistributedActorSystem,
         
         guard let found = managedActors[id] else {
             taggedLogger.trace("not found locally")
-            if let resolveOnDemand = self.resolveOnDemandHandler {
+            if let resolveOnDemand = resolveOnDemandHandler {
                 taggedLogger.trace("resolve on demand")
                 
                 let resolvedOnDemandActor = Self.$alreadyLocked.withValue(true) {
                     resolveOnDemand(id)
                 }
-                if let resolvedOnDemandActor = resolvedOnDemandActor {
+                if let resolvedOnDemandActor {
                     taggedLogger.trace("attempt to resolve on-demand as \(resolvedOnDemandActor)")
                     if let wellTyped = resolvedOnDemandActor as? Act {
                         taggedLogger.trace("resolved on-demand as \(Act.self)")
                         return wellTyped
-                    } else {
+                    }
+                    else {
                         taggedLogger.error("resolved on demand, but wrong type: \(type(of: resolvedOnDemandActor))")
                         throw WebSocketActorSystemError.resolveFailed(id: id)
                     }
-                } else {
+                }
+                else {
                     taggedLogger.trace("resolve on demand")
                 }
             }
@@ -320,18 +321,20 @@ public final class WebSocketActorSystem: DistributedActorSystem,
 
         guard let resolved = managedActors[id] else {
             taggedLogger.trace("here")
-            if let resolveOnDemand = self.resolveOnDemandHandler {
+            if let resolveOnDemand = resolveOnDemandHandler {
                 taggedLogger.trace("got handler")
                 return Self.$alreadyLocked.withValue(true) {
                     if let resolvedOnDemandActor = resolveOnDemand(id) {
                         taggedLogger.trace("Resolved ON DEMAND as \(resolvedOnDemandActor)")
                         return resolvedOnDemandActor
-                    } else {
+                    }
+                    else {
                         taggedLogger.trace("not resolved")
                         return nil
                     }
                 }
-            } else {
+            }
+            else {
                 taggedLogger.trace("no resolveOnDemandHandler")
             }
 
@@ -348,31 +351,32 @@ public final class WebSocketActorSystem: DistributedActorSystem,
     }
 }
 
-extension WebSocketActorSystem {
-
-    public func registerOnDemandResolveHandler(resolveOnDemand: @escaping (ActorID) -> (any DistributedActor)?) {
+public extension WebSocketActorSystem {
+    func registerOnDemandResolveHandler(resolveOnDemand: @escaping (ActorID) -> (any DistributedActor)?) {
         lock.lock()
         defer {
             self.lock.unlock()
         }
 
-        self.resolveOnDemandHandler = resolveOnDemand
+        resolveOnDemandHandler = resolveOnDemand
     }
 
-    @TaskLocal static var actorIDHint: ActorID?
+    @TaskLocal internal static var actorIDHint: ActorID?
 
     /// Create a local actor with the specified id.
-    public func makeLocalActor<Act>(id: ActorID, _ factory: () -> Act) -> Act
-    where Act: DistributedActor, Act.ActorSystem == WebSocketActorSystem {
+    func makeLocalActor<Act>(id: ActorID, _ factory: () -> Act) -> Act
+        where Act: DistributedActor, Act.ActorSystem == WebSocketActorSystem
+    {
         Self.$actorIDHint.withValue(id.with(nodeID)) {
             factory()
         }
     }
     
     /// Create a local actor with a random id prefixed with the actor's type.
-    public func makeLocalActor<Act>(_ factory: () -> Act) -> Act
-        where Act: DistributedActor, Act.ActorSystem == WebSocketActorSystem {
-            Self.$actorIDHint.withValue(.random(for: Act.self, node: nodeID)) {
+    func makeLocalActor<Act>(_ factory: () -> Act) -> Act
+        where Act: DistributedActor, Act.ActorSystem == WebSocketActorSystem
+    {
+        Self.$actorIDHint.withValue(.random(for: Act.self, node: nodeID)) {
             factory()
         }
     }
@@ -391,13 +395,14 @@ extension WebSocketActorSystem {
             switch wireEnvelope {
             case .call(let remoteCallEnvelope):
                 // log("receive-decode-deliver", "Decode remoteCall...")
-                self.receiveInboundCall(envelope: remoteCallEnvelope, on: remote)
+                receiveInboundCall(envelope: remoteCallEnvelope, on: remote)
             case .reply(let replyEnvelope):
-                try await self.receiveInboundReply(envelope: replyEnvelope)
+                try await receiveInboundReply(envelope: replyEnvelope)
             case .none, .connectionClose:
                 taggedLogger.error("Failed decoding: \(data); decoded empty")
             }
-        } catch {
+        }
+        catch {
             taggedLogger.error("Failed decoding: \(data), error: \(error)")
         }
         taggedLogger.trace("done")
@@ -428,7 +433,8 @@ extension WebSocketActorSystem {
                         on: recipient,
                         target: target,
                         invocationDecoder: &decoder,
-                        handler: handler)
+                        handler: handler
+                    )
                 }
 
                 // As implicit opening of existential becomes part of the language,
@@ -436,7 +442,8 @@ extension WebSocketActorSystem {
                 // SE-352 Implicitly Opened Existentials:
                 // https://github.com/apple/swift-evolution/blob/main/proposals/0352-implicit-open-existentials.md
                 try await _openExistential(anyRecipient, do: doExecuteDistributedTarget)
-            } catch {
+            }
+            catch {
                 taggedLogger.error("failed to executeDistributedTarget [\(target)] on [\(anyRecipient)], error: \(error)")
                 try! await handler.onThrow(error: error)
             }
@@ -453,13 +460,13 @@ extension WebSocketActorSystem {
 // ==== ----------------------------------------------------------------------------------------------------------------
 // - MARK: RemoteCall implementations
 
-extension WebSocketActorSystem {
-    public func remoteCall<Act, Err, Res>(
+public extension WebSocketActorSystem {
+    func remoteCall<Act, Err, Res>(
         on actor: Act,
         target: RemoteCallTarget,
         invocation: inout InvocationEncoder,
-        throwing: Err.Type,
-        returning: Res.Type
+        throwing _: Err.Type,
+        returning _: Res.Type
     ) async throws -> Res where Act: DistributedActor, Act.ID == ActorID, Err: Error, Res: Codable {
         let taggedLogger = logger.withOp().with(actor.id).with(target)
         taggedLogger.info("remoteCall")
@@ -493,16 +500,17 @@ extension WebSocketActorSystem {
             decoder.userInfo[.actorSystemKey] = self
 
             return try decoder.decode(Res.self, from: replyData)
-        } catch {
+        }
+        catch {
             throw WebSocketActorSystemError.decodingError(error: error)
         }
     }
 
-    public func remoteCallVoid<Act, Err>(
+    func remoteCallVoid<Act, Err>(
         on actor: Act,
         target: RemoteCallTarget,
         invocation: inout InvocationEncoder,
-        throwing: Err.Type
+        throwing _: Err.Type
     ) async throws where Act: DistributedActor, Act.ID == ActorID, Err: Error {
         let taggedLogger = logger.withOp().with(actor.id)
         taggedLogger.trace("Call to: \(actor.id), target: \(target), target.identifier: \(target.identifier)")
@@ -529,10 +537,9 @@ extension WebSocketActorSystem {
         taggedLogger.trace("COMPLETED CALL: \(target)")
     }
     
-    
-    
-    func write(remote: RemoteNode,
-               envelope: WebSocketWireEnvelope) async throws {
+    internal func write(remote: RemoteNode,
+                        envelope: WebSocketWireEnvelope) async throws
+    {
         let taggedLogger = logger.withOp()
         taggedLogger.trace("unwrap WebSocketWireEnvelope")
 
@@ -541,8 +548,8 @@ extension WebSocketActorSystem {
             var data = remote.channel.channel.allocator.buffer(capacity: 2)
             data.write(webSocketErrorCode: .protocolError)
             let frame = WebSocketFrame(fin: true,
-                opcode: .connectionClose,
-                data: data)
+                                       opcode: .connectionClose,
+                                       data: data)
             try await remote.outbound.write(frame)
 //            try await remote.channel.channel.close()
         case .reply, .call:
@@ -556,7 +563,8 @@ extension WebSocketActorSystem {
 
                 let frame = WebSocketFrame(fin: true, opcode: .text, data: data)
                 try await remote.outbound.write(frame)
-            } catch {
+            }
+            catch {
                 taggedLogger.error("Failed to serialize call [\(envelope)], error: \(error)")
             }
         }
@@ -576,13 +584,13 @@ public struct WebSocketActorSystemResultHandler: DistributedTargetInvocationResu
         let encoder = JSONEncoder()
         encoder.userInfo[.actorSystemKey] = actorSystem
         let returnValue = try encoder.encode(value)
-        let envelope = WebSocketReplyEnvelope(callID: self.callID, sender: nil, value: returnValue)
+        let envelope = WebSocketReplyEnvelope(callID: callID, sender: nil, value: returnValue)
         try await actorSystem.write(remote: remote, envelope: WebSocketWireEnvelope.reply(envelope))
     }
 
     public func onReturnVoid() async throws {
         system.logger.withOp().with(callID).trace("returning Void")
-        let envelope = WebSocketReplyEnvelope(callID: self.callID, sender: nil, value: "".data(using: .utf8)!)
+        let envelope = WebSocketReplyEnvelope(callID: callID, sender: nil, value: "".data(using: .utf8)!)
         try await actorSystem.write(remote: remote, envelope: WebSocketWireEnvelope.reply(envelope))
     }
 
@@ -591,7 +599,7 @@ public struct WebSocketActorSystemResultHandler: DistributedTargetInvocationResu
         // Naive best-effort carrying the error name back to the caller;
         // Always be careful when exposing error information -- especially do not ship back the entire description
         // or error of a thrown value as it may contain information which should never leave the node.
-        let envelope = WebSocketReplyEnvelope(callID: self.callID, sender: nil, value: "".data(using: .utf8)!)
+        let envelope = WebSocketReplyEnvelope(callID: callID, sender: nil, value: "".data(using: .utf8)!)
         try await actorSystem.write(remote: remote, envelope: WebSocketWireEnvelope.reply(envelope))
     }
 }

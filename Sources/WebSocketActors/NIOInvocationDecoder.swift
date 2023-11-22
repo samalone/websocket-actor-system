@@ -1,15 +1,15 @@
 /*
-See LICENSE folder for this sample’s licensing information.
+ See LICENSE folder for this sample’s licensing information.
 
-Abstract:
-Invocation decoder from a NIO byte buffer.
-*/
+ Abstract:
+ Invocation decoder from a NIO byte buffer.
+ */
 
 import Distributed
 import Foundation
+import Logging
 import NIO
 import NIOWebSocket
-import Logging
 
 public class NIOInvocationDecoder: DistributedTargetInvocationDecoder {
     public typealias SerializationRequirement = any Codable
@@ -19,10 +19,10 @@ public class NIOInvocationDecoder: DistributedTargetInvocationDecoder {
     let logger: Logger
     var argumentsIterator: Array<Data>.Iterator
 
-    internal init(system: WebSocketActorSystem, envelope: RemoteWebSocketCallEnvelope) {
+    init(system: WebSocketActorSystem, envelope: RemoteWebSocketCallEnvelope) {
         self.envelope = envelope
-        self.logger = system.logger
-        self.argumentsIterator = envelope.args.makeIterator()
+        logger = system.logger
+        argumentsIterator = envelope.args.makeIterator()
 
         let decoder = JSONDecoder()
         decoder.userInfo[.actorSystemKey] = system
@@ -30,8 +30,8 @@ public class NIOInvocationDecoder: DistributedTargetInvocationDecoder {
     }
 
     public func decodeGenericSubstitutions() throws -> [Any.Type] {
-        return envelope.genericSubs.compactMap { name in
-            return _typeByName(name)
+        envelope.genericSubs.compactMap { name in
+            _typeByName(name)
         }
     }
 
@@ -47,7 +47,8 @@ public class NIOInvocationDecoder: DistributedTargetInvocationDecoder {
             let value = try decoder.decode(Argument.self, from: data)
             taggedLogger.trace("decoded: \(value)")
             return value
-        } catch {
+        }
+        catch {
             taggedLogger.trace("error: \(error)")
             throw error
         }

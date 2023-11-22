@@ -1,12 +1,12 @@
 /*
-See LICENSE folder for this sample’s licensing information.
+ See LICENSE folder for this sample’s licensing information.
 
-Abstract:
-Wrappers around Logging package to add metadata automatically.
-*/
+ Abstract:
+ Wrappers around Logging package to add metadata automatically.
+ */
 
-import Foundation
 import Distributed
+import Foundation
 import Logging
 
 /// Internal utilities for adding metadata to loggers. These functions ensure
@@ -35,7 +35,7 @@ extension Logger {
     }
     
     func with(target: String) -> Logger {
-        self.with(RemoteCallTarget(target))
+        with(RemoteCallTarget(target))
     }
     
     func with(_ target: RemoteCallTarget) -> Logger {
@@ -60,7 +60,7 @@ extension Logger {
     func with(_ envelope: RemoteWebSocketCallEnvelope) -> Logger {
         // Don't log envelope.args unless explicitly requested,
         // because they may contain private data.
-        self.with(target: envelope.invocationTarget)
+        with(target: envelope.invocationTarget)
             .with(envelope.recipient)
             .with(envelope.callID)
     }

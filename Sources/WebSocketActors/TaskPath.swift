@@ -8,7 +8,7 @@
 import Foundation
 
 struct TaskPath: CustomStringConvertible {
-    @TaskLocal static var current: TaskPath = TaskPath()
+    @TaskLocal static var current: TaskPath = .init()
     
     let path: String
     

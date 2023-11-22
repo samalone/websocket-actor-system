@@ -1,15 +1,15 @@
 //
 //  ExponentialBackoff.swift
-//  
+//
 //
 //  Created by Stuart A. Malone on 11/14/23.
 //
 
 import Foundation
 
-extension Double {
+public extension Double {
     /// The [golden ratio](https://en.wikipedia.org/wiki/Golden_ratio).
-    public static let phi = 1.6180339887498948482
+    static let phi = 1.6180339887498948482
 }
 
 /// Provides a slightly randomized infinite sequence of exponentially growing numbers.
@@ -18,7 +18,6 @@ extension Double {
 ///
 /// > Note: See [Exponential backoff](https://en.wikipedia.org/wiki/Exponential_backoff). (2023, September 23). In Wikipedia.
 public struct ExponentialBackoff: Sequence {
-    
     /// The first value in the sequence. If this is >= ``jitter``, then the
     /// first value will be randomized with jitter.
     public var initialDelay: TimeInterval
@@ -41,7 +40,8 @@ public struct ExponentialBackoff: Sequence {
                 minDelay: TimeInterval = 0.5,
                 maxDelay: TimeInterval = 30.0,
                 jitter: TimeInterval = 0.25,
-                growth: Double = .phi) {
+                growth: Double = .phi)
+    {
         precondition(initialDelay >= 0)
         precondition(minDelay > 0)
         precondition(minDelay <= maxDelay)
@@ -62,10 +62,10 @@ public struct ExponentialBackoff: Sequence {
         init(backoff: ExponentialBackoff) {
             self.backoff = backoff
             if backoff.initialDelay >= backoff.jitter {
-                self.delay = backoff.initialDelay + Double.random(in: -backoff.jitter ... backoff.jitter)
+                delay = backoff.initialDelay + Double.random(in: -backoff.jitter ... backoff.jitter)
             }
             else {
-                self.delay = backoff.initialDelay
+                delay = backoff.initialDelay
             }
         }
         
