@@ -74,8 +74,12 @@ extension WebSocketActorSystem {
             remoteNode?.channel.channel.localAddress?.port ?? 0
         }
 
-        func updateConnectionStatus(_ status: ResilientTask.Status) async {
-            await system.monitor?(status)
+        func updateConnectionStatus(_ status: ResilientTask.Status) {
+            // We _must_ call the monitor in a separate task, or there will be
+            // deadlock of the monitor tries to make a distributed actor call.
+            Task {
+                await system.monitor?(status)
+            }
         }
 
         func connect(host: String, port: Int) {
