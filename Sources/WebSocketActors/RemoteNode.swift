@@ -7,6 +7,7 @@
 
 import Foundation
 import NIO
+import NIOAsyncWebSockets
 import NIOWebSocket
 
 final class RemoteNode {

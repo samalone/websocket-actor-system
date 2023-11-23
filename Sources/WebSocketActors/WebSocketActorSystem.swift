@@ -9,6 +9,7 @@ import Distributed
 import Foundation
 import Logging
 import NIO
+import NIOAsyncWebSockets
 import NIOWebSocket
 
 #if canImport(Network)
