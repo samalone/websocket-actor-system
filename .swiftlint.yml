@@ -1,7 +1,9 @@
 disabled_rules:
+  - file_length
   - identifier_name
   - nesting
   - opening_brace
   - statement_position
   - trailing_comma
+  - trailing_whitespace
 force_try: warning

@@ -183,7 +183,10 @@ public final class WebSocketActorSystem: DistributedActorSystem,
                         let responseFrame = WebSocketFrame(fin: true, opcode: .pong, data: frameData)
                         try await remoteNode.outbound.write(responseFrame)
 
-                    case .binary, .continuation, .pong:
+                    case .pong:
+                        logger.trace("Received pong")
+
+                    case .binary, .continuation:
                         // We ignore these frames.
                         break
                     default:

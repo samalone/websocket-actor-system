@@ -55,4 +55,9 @@ final class RemoteNode {
             try await outbound.write(frame)
         }
     }
+
+    func ping() async throws {
+        let pingFrame = WebSocketFrame(fin: true, opcode: .ping, data: channel.channel.allocator.buffer(capacity: 0))
+        try await outbound.write(pingFrame)
+    }
 }

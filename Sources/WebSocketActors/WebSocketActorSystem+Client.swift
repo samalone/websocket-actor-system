@@ -54,6 +54,7 @@ extension WebSocketActorSystem {
         private var task: ResilientTask?
         private var remoteNode: RemoteNode?
         private var waitingForRemoteNode: [CheckedContinuation<RemoteNode, Never>] = []
+        private var pinger: TimedPing?
 
         #if canImport(Network)
             static let group = NIOTSEventLoopGroup.singleton
@@ -102,9 +103,14 @@ extension WebSocketActorSystem {
                 continuation.resume(returning: remote)
             }
             waitingForRemoteNode = []
+            let ping = TimedPing(node: remote, frequency: 10)
+            ping.start()
+            pinger = ping
         }
 
         func closing(remote _: RemoteNode) async {
+            pinger?.stop()
+            pinger = nil
             remoteNode = nil
         }
 
