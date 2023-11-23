@@ -120,6 +120,10 @@ public final class WebSocketActorSystem: DistributedActorSystem,
             manager = await createClientManager(to: address)
             logger.info("client connected to \(address)")
         case .server(let address):
+            guard address.scheme == .insecure else {
+                logger.error("The WebSocketActorSystem only supports insecure server mode. Use a proxy server to provide secure connections.")
+                throw WebSocketActorSystemError.secureServerNotSupported
+            }
             manager = await createServerManager(at: address)
             let realAddress = try await self.address()
             logger.info("server listening at \(realAddress)")
@@ -629,4 +633,6 @@ public enum WebSocketActorSystemError: Error, DistributedActorSystemError {
     case failedToUpgrade
 
     case missingReplyContinuation(callID: UUID)
+
+    case secureServerNotSupported
 }

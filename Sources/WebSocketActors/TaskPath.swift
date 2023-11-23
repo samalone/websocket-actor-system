@@ -7,8 +7,8 @@
 
 import Foundation
 
-struct TaskPath: CustomStringConvertible {
-    @TaskLocal static var current: TaskPath = .init()
+public struct TaskPath: CustomStringConvertible {
+    @TaskLocal public static var current: TaskPath = .init()
 
     let path: String
 
@@ -16,12 +16,12 @@ struct TaskPath: CustomStringConvertible {
         self.path = path
     }
 
-    static func with<R>(name: String, block: () async throws -> R) async rethrows -> R {
+    public static func with<R>(name: String, block: () async throws -> R) async rethrows -> R {
         let p = current.path
         return try await $current.withValue(TaskPath(path: p.isEmpty ? name : p + " > " + name), operation: block)
     }
 
-    var description: String {
+    public var description: String {
         "{Task \(path)}"
     }
 }
