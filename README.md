@@ -62,7 +62,7 @@ struct Server {
         let serverAddress = ServerAddress(scheme: .insecure, host: "localhost", port: 8888)
         let server = try await WebSocketActorSystem(mode: .server(at: serverAddress), id: "server")
 
-        let receptionist = server.makeActor(id: .receptionist) {
+        let receptionist = server.makeLocalActor(id: .receptionist) {
             Receptionist(actorSystem: server)
         }
         
@@ -86,9 +86,7 @@ struct Client {
         // client will be assigned a unique random ID.
         let client = try await WebSocketActorSystem(mode: .client(of: serverAddress))
 
-        let receptionist = server.makeActor(id: .receptionist) {
-            Receptionist(actorSystem: server)
-        }
+        let receptionist = Receptionist.resolve(id: .receptionist, using: client)
         
         try await Task.sleep(for: .seconds(100_000))
     }
