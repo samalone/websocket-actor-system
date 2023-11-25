@@ -35,11 +35,6 @@ public struct ActorSystemUserInfoKey: RawRepresentable, Equatable, Hashable, Sen
         lhs.rawValue == rhs.rawValue
     }
     
-    /// The key's hash value.
-    @inlinable public var hashValue: Int {
-        rawValue.hashValue
-    }
-    
     /// Hashes the essential components of this value by feeding them into the
     /// given hasher.
     ///
@@ -47,9 +42,5 @@ public struct ActorSystemUserInfoKey: RawRepresentable, Equatable, Hashable, Sen
     ///   of this instance.
     public func hash(into hasher: inout Hasher) {
         rawValue.hash(into: &hasher)
-    }
-    
-    public static func != (lhs: ActorSystemUserInfoKey, rhs: ActorSystemUserInfoKey) -> Bool {
-        lhs.rawValue != rhs.rawValue
     }
 }
