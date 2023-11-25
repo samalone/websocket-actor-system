@@ -10,18 +10,23 @@ import NIO
 import NIOAsyncWebSockets
 import NIOWebSocket
 
-final class RemoteNode {
+final actor RemoteNode {
     let nodeID: NodeIdentity
     let channel: WebSocketAgentChannel
     let inbound: NIOAsyncChannelInboundStream<WebSocketFrame>
     let outbound: WebSocketOutbound
+    var userInfo: [ActorSystemUserInfoKey: Any] = [:]
+
+    @TaskLocal static var current: RemoteNode?
 
     static func withRemoteNode(nodeID: NodeIdentity, channel: WebSocketAgentChannel,
                                block: (RemoteNode) async throws -> Void) async throws
     {
         try await channel.executeThenClose { inbound, outbound in
             let remote = RemoteNode(nodeID: nodeID, channel: channel, inbound: inbound, outbound: outbound)
-            try await block(remote)
+            try await $current.withValue(remote) {
+                try await block(remote)
+            }
         }
     }
 
@@ -60,5 +65,13 @@ final class RemoteNode {
     func ping() async throws {
         let pingFrame = WebSocketFrame(fin: true, opcode: .ping, data: channel.channel.allocator.buffer(capacity: 0))
         try await outbound.write(pingFrame)
+    }
+
+    func getUserInfo(key: ActorSystemUserInfoKey) -> Any? {
+        userInfo[key]
+    }
+
+    func setUserInfo(key: ActorSystemUserInfoKey, value: Any) {
+        userInfo[key] = value
     }
 }

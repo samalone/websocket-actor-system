@@ -360,6 +360,24 @@ public final class WebSocketActorSystem: DistributedActorSystem,
     public func makeInvocationEncoder() -> InvocationEncoder {
         .init()
     }
+    
+    /// Retrieve custom information about the remote node the actor is running on.
+    /// You can use this to store context such as user login information.
+    /// This function always returns nil when called outside of a distributed actor.
+    public func getNodeInfo(key: ActorSystemUserInfoKey) async throws -> Any? {
+        guard let remoteNode = RemoteNode.current else {
+            throw WebSocketActorSystemError.notInDistributedActor
+        }
+        return await remoteNode.userInfo[key]
+    }
+    
+    /// Set custom information about the remote node the actor is running on.
+    public func setNodeInfo(key: ActorSystemUserInfoKey, value: Any) async throws {
+        guard let remoteNode = RemoteNode.current else {
+            throw WebSocketActorSystemError.notInDistributedActor
+        }
+        await remoteNode.setUserInfo(key: key, value: value)
+    }
 }
 
 public extension WebSocketActorSystem {
@@ -635,4 +653,7 @@ public enum WebSocketActorSystemError: Error, DistributedActorSystemError {
     case missingReplyContinuation(callID: UUID)
 
     case secureServerNotSupported
+    
+    /// Attempt to get or set node info outside of a distributed actor.
+    case notInDistributedActor
 }
