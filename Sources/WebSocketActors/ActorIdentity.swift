@@ -38,6 +38,12 @@ public struct ActorIdentity: Sendable, Encodable, CustomStringConvertible, Custo
         self.type = type
         self.node = node
     }
+    
+    public init<Act>(id: String, for _: Act.Type, node: NodeIdentity? = nil) {
+        self.id = id
+        self.type = "\(Act.self)"
+        self.node = node
+    }
 
     enum CodingKeys: String, CodingKey {
         case node

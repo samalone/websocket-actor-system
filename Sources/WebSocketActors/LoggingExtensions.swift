@@ -16,6 +16,12 @@ import Logging
 /// a [logging backend](https://github.com/apple/swift-log#selecting-a-logging-backend-implementation-applications-only)
 /// that provides more structure than the default `StreamLogHandler`.
 extension Logger {
+    public func with(level: Logger.Level) -> Logger {
+        var logger = self
+        logger.logLevel = level
+        return logger
+    }
+    
     func with(_ actorID: ActorIdentity) -> Logger {
         var logger = self
         logger[metadataKey: "actorID"] = .stringConvertible(actorID)

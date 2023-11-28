@@ -62,10 +62,43 @@ public struct ServerAddress: Hashable, Sendable, Codable, Equatable {
         self.path = path
     }
 
+    public init?(url: URL) {
+        guard let comp = URLComponents(url: url, resolvingAgainstBaseURL: true),
+              let host = comp.host
+        else {
+            return nil
+        }
+        switch comp.scheme {
+        case "http", "ws":
+            self.scheme = .insecure
+        case "https", "wss":
+            self.scheme = .secure
+        default:
+            return nil
+        }
+        self.host = host
+        self.port = comp.port ?? scheme.port
+        self.path = comp.path.isEmpty ? "/" : comp.path
+    }
+
+    public init?(string: String) {
+        guard let url = URL(string: string) else { return nil }
+        self.init(url: url)
+    }
+
     func with(port: Int) -> ServerAddress {
         var address = self
         address.port = port
         return address
+    }
+}
+
+extension ServerAddress: ExpressibleByStringLiteral {
+    public init(stringLiteral value: String) {
+        guard let address = ServerAddress(string: value) else {
+            fatalError("Invalid ServerAddress URL: \(value)")
+        }
+        self = address
     }
 }
 

@@ -39,32 +39,6 @@ let websocketResponse = """
 </html>
 """
 
-/// A `Manager` is an actor protocol that provides the `WebSocketActorSystem`
-/// with a uniform interface to clients and servers, so that certain universal
-/// operations can be performed without caring which mode the actor system is in.
-protocol Manager {
-    /// Return the local port number. For the server, this is the port it is listening on.
-    /// For a client, this is the (less important) local port number it is connecting from.
-    ///
-    /// - Note: Even for a server, the`localPort()` is only needed
-    /// when the server was created on port 0, which uses a system-assigned port.
-    /// This is normally the case only when writing tests. In production, the server
-    /// is usually created on a fixed port number and calls to `localPort()` are not needed.
-    func localPort() async throws -> Int
-
-    /// Select a channel to the given `actorID`. This function is only called for remote actors.
-    /// Clients can simply return their current channel, while servers need to look up the
-    /// channel associated with the actor's node ID.
-    func remoteNode(for nodeID: ActorIdentity) async throws -> RemoteNode
-
-    /// Close all channels and stop re-opening them. This is called when the actor system
-    /// wants to shut down.
-    func cancel() async
-
-    func opened(remote: RemoteNode) async
-    func closing(remote: RemoteNode) async
-}
-
 /// The channel type the server uses to listen for new client connections.
 typealias ServerListeningChannel = NIOAsyncChannel<EventLoopFuture<WebSocketActorSystem.ServerUpgradeResult>, Never>
 
@@ -74,12 +48,32 @@ extension WebSocketAgentChannel {
     }
 }
 
+enum FakeUpgradeError: Error {
+    case cantReallyUpgrade
+}
+
 extension WebSocketActorSystem {
     private static let responseBody = ByteBuffer(string: websocketResponse)
 
     enum ServerUpgradeResult {
         case websocket(WebSocketAgentChannel, NodeIdentity)
         case notUpgraded(NIOAsyncChannel<HTTPServerRequestPart, HTTPPart<HTTPResponseHead, ByteBuffer>>)
+    }
+
+    final class MyUpgrader<UpgradeResult: Sendable>: NIOTypedHTTPServerProtocolUpgrader, Sendable {
+        let supportedProtocol: String = "websocket"
+
+        let requiredUpgradeHeaders: [String] = []
+
+        func buildUpgradeResponse(channel: NIOCore.Channel, upgradeRequest: NIOHTTP1.HTTPRequestHead, initialResponseHeaders: NIOHTTP1.HTTPHeaders) -> NIOCore.EventLoopFuture<NIOHTTP1.HTTPHeaders> {
+            print("build upgrade response")
+            return channel.eventLoop.makeFailedFuture(FakeUpgradeError.cantReallyUpgrade)
+        }
+
+        func upgrade(channel: NIOCore.Channel, upgradeRequest: NIOHTTP1.HTTPRequestHead) -> NIOCore.EventLoopFuture<UpgradeResult> {
+            print("upgrade")
+            return channel.eventLoop.makeFailedFuture(FakeUpgradeError.cantReallyUpgrade)
+        }
     }
 
     private actor ServerManager: Manager {
@@ -228,12 +222,13 @@ extension WebSocketActorSystem {
                     let upgrader = NIOAsyncWebSockets
                         .NIOTypedWebSocketServerUpgrader<ServerUpgradeResult>(
                             shouldUpgrade: { channel, _ in
-//                                guard head.headers.nodeID != nil else {
-//                                    return channel.eventLoop.makeSucceededFuture(nil)
-//                                }
-                                channel
+                                // Any headers we set here will be passed back to the client
+                                // in the response.
+                                var headers = HTTPHeaders()
+                                headers.nodeID = self.system.nodeID
+                                return channel
                                     .eventLoop
-                                    .makeSucceededFuture(HTTPHeaders())
+                                    .makeSucceededFuture(headers)
                             },
                             upgradePipelineHandler: { channel, requestHead in
                                 channel
@@ -246,8 +241,10 @@ extension WebSocketActorSystem {
                                     }
                             })
 
+                    let preUpgrade = MyUpgrader<ServerUpgradeResult>()
+
                     let serverUpgradeConfiguration = NIOTypedHTTPServerUpgradeConfiguration(
-                        upgraders: [upgrader],
+                        upgraders: [preUpgrade, upgrader],
                         notUpgradingCompletionHandler: { channel in
                             channel.eventLoop
                                 .makeCompletedFuture {

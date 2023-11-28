@@ -142,8 +142,11 @@ extension WebSocketActorSystem {
                             self.system.logger.trace("responseHead = \(responseHead)")
                             return channel.eventLoop.makeCompletedFuture {
                                 let asyncChannel = try WebSocketAgentChannel(wrappingChannelSynchronously: channel)
+                                guard let serverNodeID = responseHead.headers.nodeID else {
+                                    return UpgradeResult.notUpgraded
+                                }
                                 return UpgradeResult.websocket(ServerConnection(channel: asyncChannel,
-                                                                                nodeID: NodeIdentity("bogus")))
+                                                                                nodeID: serverNodeID))
                             }
                         }
 

@@ -46,6 +46,7 @@ typealias WebSocketOutbound = NIOAsyncChannelOutboundWriter<WebSocketFrame>
 public enum WebSocketActorSystemMode {
     case client(of: ServerAddress)
     case server(at: ServerAddress)
+    case localOnly
 }
 
 /// A distributed actor system that uses WebSockets to allow multiple clients
@@ -127,6 +128,9 @@ public final class WebSocketActorSystem: DistributedActorSystem,
             manager = await createServerManager(at: address)
             let realAddress = try await self.address()
             logger.info("server listening at \(realAddress)")
+        case .localOnly:
+            manager = LocalManager()
+            logger.info("local-only mode")
         }
     }
 
@@ -140,6 +144,8 @@ public final class WebSocketActorSystem: DistributedActorSystem,
             serverAddress
         case .server(let address):
             try await address.with(port: manager.localPort())
+        case .localOnly:
+            throw WebSocketActorSystemError.noPeers
         }
     }
 
@@ -360,7 +366,7 @@ public final class WebSocketActorSystem: DistributedActorSystem,
     public func makeInvocationEncoder() -> InvocationEncoder {
         .init()
     }
-    
+
     /// Retrieve custom information about the remote node the actor is running on.
     /// You can use this to store context such as user login information.
     /// This function always returns nil when called outside of a distributed actor.
@@ -370,7 +376,7 @@ public final class WebSocketActorSystem: DistributedActorSystem,
         }
         return await remoteNode.userInfo[key]
     }
-    
+
     /// Set custom information about the remote node the actor is running on.
     public func setNodeInfo(key: ActorSystemUserInfoKey, value: Any) async throws {
         guard let remoteNode = RemoteNode.current else {
@@ -646,14 +652,14 @@ public enum WebSocketActorSystemError: Error, DistributedActorSystemError {
     /// have an open `Channel` to the remote node. This is currently an error.
     /// Future versions of this library may attempt to reconnect to the remote node
     /// instead of throwing this error.
-    case noRemoteNode(id: NodeIdentity)
+    case noRemoteNode
 
     case failedToUpgrade
 
     case missingReplyContinuation(callID: UUID)
 
     case secureServerNotSupported
-    
+
     /// Attempt to get or set node info outside of a distributed actor.
     case notInDistributedActor
 }
