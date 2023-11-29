@@ -91,14 +91,14 @@ public final class WebSocketActorSystem: DistributedActorSystem,
     public let nodeID: NodeIdentity
     public let logger: Logger
     private let pendingReplies = PendingReplies()
-    let mode: WebSocketActorSystemMode
 
     /// The ``manager`` encapsulates the differences between the client and the server.
     /// It opens communications with other nodes and maps NodeIDs to RemoteNodes.
     ///
     /// Although this is a `var`, it is set during initialization and never changed.
     /// It is only a var to solve initialization problems.
-    private var manager: Manager!
+    private var managers: [Manager] = []
+    private var remoteNodes = RemoteNodeDirectory()
 
     /// The ``lock`` limits access to `managedActors` and `resolveOnDemandHandler`.
     /// These properties are used in synchronous code, and the lock makes them thread-safe.
@@ -108,51 +108,38 @@ public final class WebSocketActorSystem: DistributedActorSystem,
 
     public var monitor: ResilientTask.MonitorFunction?
 
-    public init(mode: WebSocketActorSystemMode, id: NodeIdentity = .random(),
+    public init(id: NodeIdentity = .random(),
                 logger: Logger = defaultLogger) async throws
     {
         nodeID = id
         self.logger = logger
-        self.mode = mode
-
-        // Start networking
-        switch mode {
-        case .client(let address):
-            manager = await createClientManager(to: address)
-            logger.info("client connected to \(address)")
-        case .server(let address):
-            guard address.scheme == .insecure else {
-                logger.error("The WebSocketActorSystem only supports insecure server mode. Use a proxy server to provide secure connections.")
-                throw WebSocketActorSystemError.secureServerNotSupported
-            }
-            manager = await createServerManager(at: address)
-            let realAddress = try await self.address()
-            logger.info("server listening at \(realAddress)")
-        case .localOnly:
-            manager = LocalManager()
-            logger.info("local-only mode")
-        }
     }
 
-    public func localPort() async throws -> Int {
-        try await manager.localPort()
+    @discardableResult
+    public func runServer(at address: ServerAddress) async throws -> ServerManager {
+        guard address.scheme == .insecure else {
+            logger.error("""
+            The WebSocketActorSystem only supports insecure server mode. \
+            Use a proxy server to provide secure connections.
+            """)
+            throw WebSocketActorSystemError.secureServerNotSupported
+        }
+        let server = await createServerManager(at: address)
+        managers.append(server)
+        return server
     }
 
-    public func address() async throws -> ServerAddress {
-        switch mode {
-        case .client(let serverAddress):
-            serverAddress
-        case .server(let address):
-            try await address.with(port: manager.localPort())
-        case .localOnly:
-            throw WebSocketActorSystemError.noPeers
-        }
+    @discardableResult
+    public func connectClient(to address: ServerAddress) async throws -> ClientManager {
+        let client = await createClientManager(to: address)
+        logger.info("client connected to \(address)")
+        return client
     }
 
     func dispatchIncomingFrames(channel: WebSocketAgentChannel, remoteNodeID: NodeIdentity) async throws {
         try await RemoteNode.withRemoteNode(nodeID: remoteNodeID, channel: channel) { remoteNode in
-            logger.trace("opened remoteNode for \(mode) on \(TaskPath.current)")
-            await manager.opened(remote: remoteNode)
+            logger.trace("opened remoteNode for \(remoteNodeID) on \(TaskPath.current)")
+            await remoteNodes.opened(remote: remoteNode)
 
             try await TaskPath.with(name: "remoteNode") {
                 for try await frame in remoteNode.inbound {
@@ -206,13 +193,31 @@ public final class WebSocketActorSystem: DistributedActorSystem,
                     }
                 }
             }
-            logger.trace("closing remoteNode for \(mode) on \(TaskPath.current)")
-            await manager.closing(remote: remoteNode)
+            logger.trace("closing remoteNode for \(remoteNodeID) on \(TaskPath.current)")
+            await remoteNodes.closing(remote: remoteNode)
         }
     }
 
     public func shutdownGracefully() async {
-        await manager.cancel()
+        if #available(macOS 14.0, iOS 17.0, watchOS 10.0, tvOS 17.0, *) {
+            await withDiscardingTaskGroup { group in
+                for manager in managers {
+                    group.addTask {
+                        await manager.cancel()
+                    }
+                }
+            }
+        }
+        else {
+            // Fallback on earlier versions
+            await withTaskGroup(of: Void.self) { group in
+                for manager in managers {
+                    group.addTask {
+                        await manager.cancel()
+                    }
+                }
+            }
+        }
     }
 
     public func assignID<Act>(_ actorType: Act.Type) -> ActorID where Act: DistributedActor, Act.ID == ActorID {
@@ -506,7 +511,7 @@ public extension WebSocketActorSystem {
         taggedLogger.info("remoteCall")
         taggedLogger.trace("Call to: \(actor.id), target: \(target), target.identifier: \(target.identifier)")
 
-        let remoteNode = try await manager.remoteNode(for: actor.id)
+        let remoteNode = try await remoteNodes.remoteNode(for: actor.id)
 
         taggedLogger.trace("Prepare [\(target)] call...")
 
@@ -547,7 +552,7 @@ public extension WebSocketActorSystem {
         let taggedLogger = logger.withOp().with(actor.id)
         taggedLogger.trace("Call to: \(actor.id), target: \(target), target.identifier: \(target.identifier)")
 
-        let remoteNode = try await manager.remoteNode(for: actor.id)
+        let remoteNode = try await remoteNodes.remoteNode(for: actor.id)
         let localInvocation = invocation
 
         taggedLogger.trace("Prepare [\(target)] call...")

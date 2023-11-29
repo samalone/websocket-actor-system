@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import NIOHTTP1
 
 /// A `NodeID` identifies a particular client or server in the WebSocketActorSystem.
 /// It is intended to be unique and constant for the lifetime of the actors in that node,
@@ -45,5 +46,27 @@ extension NodeIdentity: ExpressibleByStringLiteral {
 extension NodeIdentity: CustomStringConvertible {
     public var description: String {
         id.description
+    }
+}
+
+// In order to pass the NodeIdentity between the client and the server,
+// we put it in the request and response headers. This extension makes
+// that header easy to access.
+extension HTTPHeaders {
+    static let nodeIdKey = "ActorSystemNodeID"
+
+    var nodeID: NodeIdentity? {
+        get {
+            guard let id = self[HTTPHeaders.nodeIdKey].first else { return nil }
+            return NodeIdentity(id: id)
+        }
+        set {
+            if let newValue {
+                replaceOrAdd(name: HTTPHeaders.nodeIdKey, value: newValue.id)
+            }
+            else {
+                remove(name: HTTPHeaders.nodeIdKey)
+            }
+        }
     }
 }

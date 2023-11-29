@@ -67,7 +67,7 @@ extension Logger {
 
     func with(_ system: WebSocketActorSystem) -> Logger {
         var logger = self
-        logger[metadataKey: "system"] = .string("\(system.mode)")
+        logger[metadataKey: "system"] = .string("\(system.nodeID)")
         return logger
     }
 }
@@ -77,14 +77,15 @@ extension Logger {
 
 final class WebsocketActorSystemTests: XCTestCase {
     var server: WebSocketActorSystem!
+    var serverManager: ServerManager!
     var serverAddress = ServerAddress(scheme: .insecure, host: "localhost", port: 0)
 
     override func setUp() async throws {
-        server = try await WebSocketActorSystem(mode: .server(at: serverAddress),
-                                                id: "server",
+        server = try await WebSocketActorSystem(id: "server",
                                                 logger: Logger(label: "\(name) server").with(level: .trace))
+        serverManager = try await server.runServer(at: serverAddress)
         // Now that the server is started, we can find out what port number it is using.
-        serverAddress = try await server.address()
+        serverAddress = try await serverManager.address()
     }
 
     override func tearDown() async throws {
@@ -116,8 +117,8 @@ final class WebsocketActorSystemTests: XCTestCase {
 
     func testRemoteCalls() async throws {
         try await TaskPath.with(name: "testRemoteCalls") {
-            let client = try await WebSocketActorSystem(mode: .client(of: serverAddress),
-                                                        logger: Logger(label: "\(name) client").with(level: .trace))
+            let client = try await WebSocketActorSystem(logger: Logger(label: "\(name) client").with(level: .trace))
+            try await client.connectClient(to: serverAddress)
 
             // Create the real Alice on the server
             let serverAlice = server.makeLocalActor(id: .alice) {
@@ -142,8 +143,8 @@ final class WebsocketActorSystemTests: XCTestCase {
     }
 
     func testServerPush() async throws {
-        let client = try await WebSocketActorSystem(mode: .client(of: serverAddress),
-                                                    logger: Logger(label: "\(name) client").with(level: .trace))
+        let client = try await WebSocketActorSystem(logger: Logger(label: "\(name) client").with(level: .trace))
+        try await client.connectClient(to: serverAddress)
 
         // Create the real Alice on the server
         let serverAlice = server.makeLocalActor(id: .alice) {
@@ -162,37 +163,4 @@ final class WebsocketActorSystemTests: XCTestCase {
         let greeting = try await serverAlice.introduceYourself()
         XCTAssertEqual(greeting, "Nice to meet you, Alice.")
     }
-
-//    func testResilientTask() async throws {
-//        var retryCount = -1
-//
-//        func monitor(status: ResilientTask.Status) {
-//            switch status {
-//            case .initializing:
-//                print("initializing")
-//            case .running:
-//                print("running")
-//            case .waiting(let delay):
-//                print("waiting \(delay) seconds")
-//            case .cancelled:
-//                print("cancelled")
-//            case .failed(let error):
-//                print("failed with \(error)")
-//            }
-//        }
-//
-//        let action = ResilientTask(monitor: monitor) { initializationSuccessful in
-//            retryCount = (retryCount + 1) % 3
-//            print("retryCount = \(retryCount)")
-//            if retryCount > 0 {
-//                return
-//            }
-//            await initializationSuccessful()
-//            try await Task.sleep(for: .seconds(20))
-//        }
-//
-//        try await Task.sleep(for: .seconds(120))
-//
-//        action.cancel()
-//    }
 }

@@ -40,7 +40,7 @@ let websocketResponse = """
 """
 
 /// The channel type the server uses to listen for new client connections.
-typealias ServerListeningChannel = NIOAsyncChannel<EventLoopFuture<WebSocketActorSystem.ServerUpgradeResult>, Never>
+typealias ServerListeningChannel = NIOAsyncChannel<EventLoopFuture<ServerUpgradeResult>, Never>
 
 extension WebSocketAgentChannel {
     var remoteDescription: String {
@@ -52,224 +52,16 @@ enum FakeUpgradeError: Error {
     case cantReallyUpgrade
 }
 
+enum ServerUpgradeResult {
+    case websocket(WebSocketAgentChannel, NodeIdentity)
+    case notUpgraded(NIOAsyncChannel<HTTPServerRequestPart, HTTPPart<HTTPResponseHead, ByteBuffer>>)
+}
+
 extension WebSocketActorSystem {
     private static let responseBody = ByteBuffer(string: websocketResponse)
 
-    enum ServerUpgradeResult {
-        case websocket(WebSocketAgentChannel, NodeIdentity)
-        case notUpgraded(NIOAsyncChannel<HTTPServerRequestPart, HTTPPart<HTTPResponseHead, ByteBuffer>>)
-    }
-
-    final class MyUpgrader<UpgradeResult: Sendable>: NIOTypedHTTPServerProtocolUpgrader, Sendable {
-        let supportedProtocol: String = "websocket"
-
-        let requiredUpgradeHeaders: [String] = []
-
-        func buildUpgradeResponse(channel: NIOCore.Channel, upgradeRequest: NIOHTTP1.HTTPRequestHead, initialResponseHeaders: NIOHTTP1.HTTPHeaders) -> NIOCore.EventLoopFuture<NIOHTTP1.HTTPHeaders> {
-            print("build upgrade response")
-            return channel.eventLoop.makeFailedFuture(FakeUpgradeError.cantReallyUpgrade)
-        }
-
-        func upgrade(channel: NIOCore.Channel, upgradeRequest: NIOHTTP1.HTTPRequestHead) -> NIOCore.EventLoopFuture<UpgradeResult> {
-            print("upgrade")
-            return channel.eventLoop.makeFailedFuture(FakeUpgradeError.cantReallyUpgrade)
-        }
-    }
-
-    private actor ServerManager: Manager {
-        private let system: WebSocketActorSystem
-        private var _task: ResilientTask?
-        private var _channel: ServerListeningChannel?
-        private var waitingForChannel: [CheckedContinuation<ServerListeningChannel, Never>] = []
-        private var remoteNodes: [NodeIdentity: Status] = [:]
-
-        enum Status {
-            case current(RemoteNode)
-            case future([CheckedContinuation<RemoteNode, Never>])
-        }
-
-        init(system: WebSocketActorSystem) {
-            self.system = system
-        }
-
-        func localPort() async throws -> Int {
-            let chan = try await requireChannel()
-            return chan.channel.localAddress?.port ?? 0
-        }
-
-        func remoteNode(for actorID: ActorIdentity) async throws -> RemoteNode {
-            guard let nodeID = actorID.node else {
-                system.logger.critical("Cannot get RemoteNode without nodeID for actor \(actorID)")
-                throw WebSocketActorSystemError.missingNodeID(id: actorID)
-            }
-            return await requireRemoteNode(nodeID: nodeID)
-        }
-
-        private func setChannel(_ channel: ServerListeningChannel) {
-            _channel = channel
-            for waiter in waitingForChannel {
-                waiter.resume(returning: channel)
-            }
-            waitingForChannel.removeAll()
-        }
-
-        func requireChannel() async throws -> ServerListeningChannel {
-            if let channel = _channel {
-                channel
-            }
-            else {
-                await withCheckedContinuation { continuation in
-                    waitingForChannel.append(continuation)
-                }
-            }
-        }
-
-        func requireRemoteNode(nodeID: NodeIdentity) async -> RemoteNode {
-            if let status = remoteNodes[nodeID] {
-                switch status {
-                case .current(let node):
-                    node
-                case .future(let continuations):
-                    await withCheckedContinuation { continuation in
-                        Task {
-                            remoteNodes[nodeID] = .future(continuations + [continuation])
-                        }
-                    }
-                }
-            }
-            else {
-                await withCheckedContinuation { continuation in
-                    Task {
-                        remoteNodes[nodeID] = .future([continuation])
-                    }
-                }
-            }
-        }
-
-        func opened(remote: RemoteNode) {
-            let nodeID = remote.nodeID
-            if let status = remoteNodes[nodeID], case .future(let continuations) = status {
-                remoteNodes[nodeID] = .current(remote)
-                for continuation in continuations {
-                    continuation.resume(returning: remote)
-                }
-            }
-            else {
-                remoteNodes[nodeID] = .current(remote)
-            }
-        }
-
-        func closing(remote: RemoteNode) {
-            remoteNodes.removeValue(forKey: remote.nodeID)
-        }
-
-        public func cancel() {
-            _channel = nil
-            _task?.cancel()
-            _task = nil
-        }
-
-        func connect(host: String, port: Int) {
-            cancel()
-            _task = ResilientTask { initialized in
-
-                try await TaskPath.with(name: "server connection") {
-                    let channel = try await self.openServerChannel(host: host, port: port)
-                    self.setChannel(channel)
-
-                    await initialized()
-
-                    // We are handling each incoming connection in a separate child task. It is important
-                    // to use a discarding task group here which automatically discards finished child tasks.
-                    // A normal task group retains all child tasks and their outputs in memory until they are
-                    // consumed by iterating the group or by exiting the group. Since, we are never consuming
-                    // the results of the group we need the group to automatically discard them; otherwise, this
-                    // would result in a memory leak over time.
-                    if #available(macOS 14.0, iOS 17.0, watchOS 10.0, tvOS 17.0, *) {
-                        try await withThrowingDiscardingTaskGroup { group in
-                            try await channel.executeThenClose { inbound, _ in
-                                for try await upgradeResult in inbound {
-                                    group.addTask {
-                                        await self.system.handleUpgradeResult(upgradeResult)
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    else {
-                        // Fallback on earlier versions
-                        try await withThrowingTaskGroup(of: Void.self) { group in
-                            try await channel.executeThenClose { inbound, _ in
-                                for try await upgradeResult in inbound {
-                                    group.addTask {
-                                        await self.system.handleUpgradeResult(upgradeResult)
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        func openServerChannel(host: String, port: Int) async throws -> ServerListeningChannel {
-            try await ServerBootstrap(group: MultiThreadedEventLoopGroup.singleton)
-                .serverChannelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
-                .bind(host: host,
-                      port: port)
-            { channel in
-                channel.eventLoop.makeCompletedFuture {
-                    let upgrader = NIOAsyncWebSockets
-                        .NIOTypedWebSocketServerUpgrader<ServerUpgradeResult>(
-                            shouldUpgrade: { channel, _ in
-                                // Any headers we set here will be passed back to the client
-                                // in the response.
-                                var headers = HTTPHeaders()
-                                headers.nodeID = self.system.nodeID
-                                return channel
-                                    .eventLoop
-                                    .makeSucceededFuture(headers)
-                            },
-                            upgradePipelineHandler: { channel, requestHead in
-                                channel
-                                    .eventLoop
-                                    .makeCompletedFuture {
-                                        let remoteNodeID = requestHead.headers.nodeID!
-                                        let asyncChannel =
-                                            try WebSocketAgentChannel(wrappingChannelSynchronously: channel)
-                                        return ServerUpgradeResult.websocket(asyncChannel, remoteNodeID)
-                                    }
-                            })
-
-                    let preUpgrade = MyUpgrader<ServerUpgradeResult>()
-
-                    let serverUpgradeConfiguration = NIOTypedHTTPServerUpgradeConfiguration(
-                        upgraders: [preUpgrade, upgrader],
-                        notUpgradingCompletionHandler: { channel in
-                            channel.eventLoop
-                                .makeCompletedFuture {
-                                    try channel.pipeline.syncOperations.addHandler(HTTPByteBufferResponsePartHandler())
-                                    let asyncChannel =
-                                        try NIOAsyncChannel<HTTPServerRequestPart,
-                                            HTTPPart<HTTPResponseHead,
-                                                ByteBuffer>>(wrappingChannelSynchronously: channel)
-                                    return ServerUpgradeResult
-                                        .notUpgraded(asyncChannel)
-                                }
-                        })
-
-                    let negotiationResultFuture = try channel.pipeline.syncOperations
-                        .configureUpgradableHTTPServerPipeline(
-                            configuration: .init(upgradeConfiguration: serverUpgradeConfiguration))
-
-                    return negotiationResultFuture
-                }
-            }
-        }
-    }
-
-    func createServerManager(at address: ServerAddress) async -> Manager {
-        let server = ServerManager(system: self)
+    func createServerManager(at address: ServerAddress) async -> ServerManager {
+        let server = ServerManager(system: self, on: address)
         await server.connect(host: address.host, port: address.port)
         return server
     }
