@@ -84,7 +84,11 @@ extension WebSocketActorSystem {
             }
         }
         catch {
-            logger.error("Hit error: \(error)")
+            // Only log the error if it's not a CancellationError, which occurs
+            // normally when the server is shutting down.
+            if error as? CancellationError == nil {
+                logger.error("Error handling server connection: \(error)")
+            }
         }
     }
 

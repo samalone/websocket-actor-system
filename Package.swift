@@ -23,7 +23,6 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-log.git", from: "1.0.0"),
         .package(url: "https://github.com/apple/swift-docc-plugin", from: "1.1.0"),
         .package(url: "https://github.com/samalone/nio-async-websockets", from: "1.0.0"),
-        .package(url: "https://github.com/realm/SwiftLint", from: "0.54.0"),
     ],
     targets: [
         // Targets are the basic building blocks of a package, defining a module or a test suite.
@@ -41,12 +40,10 @@ let package = Package(
                 ],
                 swiftSettings: [
                     .unsafeFlags(["-Xfrontend", "-validate-tbd-against-ir=none"]),
-                ],
-                plugins: [.plugin(name: "SwiftLintPlugin", package: "SwiftLint")]),
+                ]),
         .testTarget(name: "WebSocketActorTests",
                     dependencies: ["WebSocketActors"],
                     swiftSettings: [
                         .unsafeFlags(["-Xfrontend", "-validate-tbd-against-ir=none"]),
-                    ],
-                    plugins: [.plugin(name: "SwiftLintPlugin", package: "SwiftLint")]),
+                    ]),
     ])
