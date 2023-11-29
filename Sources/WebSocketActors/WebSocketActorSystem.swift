@@ -109,7 +109,7 @@ public final class WebSocketActorSystem: DistributedActorSystem,
     public var monitor: ResilientTask.MonitorFunction?
 
     public init(id: NodeIdentity = .random(),
-                logger: Logger = defaultLogger) async throws
+                logger: Logger = defaultLogger)
     {
         nodeID = id
         self.logger = logger
