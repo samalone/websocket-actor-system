@@ -24,8 +24,11 @@ public final actor ClientManager: Manager {
 
     private let system: WebSocketActorSystem
     private var task: ResilientTask?
-    private var waitingForRemoteNode: [CheckedContinuation<RemoteNode, Never>] = []
+    private var waitingForRemoteNode: [Continuation<RemoteNode, Never>] = []
     private var pinger: TimedPing?
+
+    private var remoteNodeID: NodeIdentity?
+    private var remoteNodeIDContinuations: [Continuation<NodeIdentity, Never>] = []
 
     #if canImport(Network)
         static let group = NIOTSEventLoopGroup.singleton
@@ -118,9 +121,27 @@ public final actor ClientManager: Manager {
 
         switch try await upgradeResult.get() {
         case .websocket(let serverConnection):
+            setRemoteNodeID(serverConnection.nodeID)
             return serverConnection
         case .notUpgraded:
             throw WebSocketActorSystemError.failedToUpgrade
+        }
+    }
+
+    func setRemoteNodeID(_ remoteNodeID: NodeIdentity) {
+        self.remoteNodeID = remoteNodeID
+        for continuation in remoteNodeIDContinuations {
+            continuation.resume(returning: remoteNodeID)
+        }
+        remoteNodeIDContinuations.removeAll()
+    }
+
+    public func getRemoteNodeID() async throws -> NodeIdentity {
+        if let remoteNodeID = remoteNodeID {
+            return remoteNodeID
+        }
+        return await withContinuation { continuation in
+            remoteNodeIDContinuations.append(continuation)
         }
     }
 }

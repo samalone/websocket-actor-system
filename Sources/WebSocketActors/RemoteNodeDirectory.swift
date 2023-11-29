@@ -10,11 +10,11 @@ import Foundation
 final actor RemoteNodeDirectory {
     enum Status {
         case current(RemoteNode)
-        case future([CheckedContinuation<RemoteNode, Never>])
+        case future([Continuation<RemoteNode, Never>])
     }
 
     private var remoteNodes: [NodeIdentity: Status] = [:]
-    private var firstNode: [CheckedContinuation<RemoteNode, Never>] = []
+    private var firstNode: [Continuation<RemoteNode, Never>] = []
 
     func remoteNode(for actorID: ActorIdentity) async throws -> RemoteNode {
         if let nodeID = actorID.node {
@@ -47,7 +47,7 @@ final actor RemoteNodeDirectory {
             case .current(let node):
                 node
             case .future(let continuations):
-                await withCheckedContinuation { continuation in
+                await withContinuation { continuation in
                     Task {
                         remoteNodes[nodeID] = .future(continuations + [continuation])
                     }
@@ -55,7 +55,7 @@ final actor RemoteNodeDirectory {
             }
         }
         else {
-            await withCheckedContinuation { continuation in
+            await withContinuation { continuation in
                 Task {
                     remoteNodes[nodeID] = .future([continuation])
                 }

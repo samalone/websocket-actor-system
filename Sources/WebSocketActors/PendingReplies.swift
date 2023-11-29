@@ -9,9 +9,9 @@ import Foundation
 import Logging
 
 actor PendingReplies {
-    private var callContinuations: [CallID: CheckedContinuation<Data, Error>] = [:]
+    private var callContinuations: [CallID: Continuation<Data, Error>] = [:]
 
-    func expectReply(continuation: CheckedContinuation<Data, Error>) -> UUID {
+    func expectReply(continuation: Continuation<Data, Error>) -> UUID {
         let callID = UUID()
         callContinuations[callID] = continuation
         return callID
@@ -32,7 +32,7 @@ actor PendingReplies {
     }
 
     nonisolated func sendMessage(_ body: @escaping (CallID) async throws -> Void) async throws -> Data {
-        try await withCheckedThrowingContinuation { continuation in
+        try await withThrowingContinuation { continuation in
             Task {
                 let callID = await self.expectReply(continuation: continuation)
                 do {

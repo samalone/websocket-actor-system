@@ -17,11 +17,11 @@ public final actor ServerManager: Manager {
     private let originalAddress: ServerAddress
     private var _task: ResilientTask?
     private var _channel: ServerListeningChannel?
-    private var waitingForChannel: [CheckedContinuation<ServerListeningChannel, Never>] = []
+    private var waitingForChannel: [Continuation<ServerListeningChannel, Never>] = []
 
     enum Status {
         case current(RemoteNode)
-        case future([CheckedContinuation<RemoteNode, Never>])
+        case future([Continuation<RemoteNode, Never>])
     }
 
     init(system: WebSocketActorSystem, on address: ServerAddress) {
@@ -58,7 +58,7 @@ public final actor ServerManager: Manager {
             channel
         }
         else {
-            await withCheckedContinuation { continuation in
+            await withContinuation { continuation in
                 waitingForChannel.append(continuation)
             }
         }
