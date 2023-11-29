@@ -81,8 +81,8 @@ final class WebsocketActorSystemTests: XCTestCase {
     var serverAddress = ServerAddress(scheme: .insecure, host: "localhost", port: 0)
 
     override func setUp() async throws {
-        server = try await WebSocketActorSystem(id: "server",
-                                                logger: Logger(label: "\(name) server").with(level: .trace))
+        server = WebSocketActorSystem(id: "server",
+                                      logger: Logger(label: "\(name) server").with(level: .trace))
         serverManager = try await server.runServer(at: serverAddress)
         // Now that the server is started, we can find out what port number it is using.
         serverAddress = try await serverManager.address()
@@ -117,7 +117,7 @@ final class WebsocketActorSystemTests: XCTestCase {
 
     func testRemoteCalls() async throws {
         try await TaskPath.with(name: "testRemoteCalls") {
-            let client = try await WebSocketActorSystem(logger: Logger(label: "\(name) client").with(level: .trace))
+            let client = WebSocketActorSystem(logger: Logger(label: "\(name) client").with(level: .trace))
             try await client.connectClient(to: serverAddress)
 
             // Create the real Alice on the server
@@ -143,7 +143,7 @@ final class WebsocketActorSystemTests: XCTestCase {
     }
 
     func testServerPush() async throws {
-        let client = try await WebSocketActorSystem(logger: Logger(label: "\(name) client").with(level: .trace))
+        let client = WebSocketActorSystem(logger: Logger(label: "\(name) client").with(level: .trace))
         try await client.connectClient(to: serverAddress)
 
         // Create the real Alice on the server
