@@ -1,5 +1,7 @@
 # WebSocketActors
 
+[![](https://img.shields.io/endpoint?url=https%3A%2F%2Fswiftpackageindex.com%2Fapi%2Fpackages%2Fsamalone%2Fwebsocket-actor-system%2Fbadge%3Ftype%3Dswift-versions)](https://swiftpackageindex.com/samalone/websocket-actor-system) [![](https://img.shields.io/endpoint?url=https%3A%2F%2Fswiftpackageindex.com%2Fapi%2Fpackages%2Fsamalone%2Fwebsocket-actor-system%2Fbadge%3Ftype%3Dplatforms)](https://swiftpackageindex.com/samalone/websocket-actor-system)
+
 [![macOS tests](https://github.com/samalone/websocket-actor-system/actions/workflows/test-macos.yml/badge.svg)](https://github.com/samalone/websocket-actor-system/actions/workflows/test-macos.yml) [![Ubuntu tests](https://github.com/samalone/websocket-actor-system/actions/workflows/test-ubuntu.yml/badge.svg)](https://github.com/samalone/websocket-actor-system/actions/workflows/test-ubuntu.yml)
 
 WebSocketActors is a client/server communications library that allows an iOS, macOS, tvOS, or watchOS app to communicate with a server on the internet using Swift's [distributed actor system](https://developer.apple.com/documentation/distributed). It's a streamlined alternative to writing a server using Swagger/OpenAPI and then implementing your client app on top of that API. With WebSocketActors, you can make Swift function calls directly between your client and server.
