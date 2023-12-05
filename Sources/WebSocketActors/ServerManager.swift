@@ -19,11 +19,6 @@ public final actor ServerManager: Manager {
     private var _channel: ServerListeningChannel?
     private var waitingForChannel: [Continuation<ServerListeningChannel, Never>] = []
 
-    enum Status {
-        case current(RemoteNode)
-        case future([Continuation<RemoteNode, Never>])
-    }
-
     init(system: WebSocketActorSystem, on address: ServerAddress) {
         self.system = system
         self.originalAddress = address

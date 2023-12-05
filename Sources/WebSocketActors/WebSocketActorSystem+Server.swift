@@ -48,10 +48,6 @@ extension WebSocketAgentChannel {
     }
 }
 
-enum FakeUpgradeError: Error {
-    case cantReallyUpgrade
-}
-
 enum ServerUpgradeResult {
     case websocket(WebSocketAgentChannel, NodeIdentity)
     case notUpgraded(NIOAsyncChannel<HTTPServerRequestPart, HTTPPart<HTTPResponseHead, ByteBuffer>>)

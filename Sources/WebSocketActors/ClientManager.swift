@@ -24,7 +24,6 @@ public final actor ClientManager: Manager {
 
     private let system: WebSocketActorSystem
     private var task: ResilientTask?
-    private var waitingForRemoteNode: [Continuation<RemoteNode, Never>] = []
     private var pinger: TimedPing?
 
     private var remoteNodeID: NodeIdentity?
