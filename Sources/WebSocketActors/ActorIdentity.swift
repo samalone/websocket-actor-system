@@ -19,14 +19,14 @@ import NIOWebSocket
 /// about the actor.
 ///
 ///  A UUID is a common way of generating a unique `ActorIdentity`,
-///  and the ``random()`` function will create that. Alternatively, you can
-///  use the ``random(for:)`` function to generate a UUID that is prefixed
+///  and the ``random(type:node:)`` function will create that. Alternatively, you can
+///  use the ``random(for:node:)`` function to generate a UUID that is prefixed
 ///  with the type of the actor, which can be useful for generating actors
 ///  on-demand, or simply for easier debugging.
 ///
 ///  A distributed actor system also typically needs one or more actors
 ///  with fixed identities as a starting point for communications. You can
-///  use ``init(id:)`` or ``init(stringLiteral:)`` with a constant
+///  use ``init(id:type:node:)`` or ``init(stringLiteral:)`` with a constant
 ///  string to create these.
 public struct ActorIdentity: Sendable, Encodable, CustomStringConvertible, CustomDebugStringConvertible {
     public let node: NodeIdentity?

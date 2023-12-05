@@ -56,7 +56,7 @@ public enum WebSocketActorSystemMode {
 ///
 /// The `WebSocketActorSystem` uses [swift-log](https://github.com/apple/swift-log)
 /// to output debugging information. You can control the level of detail and destination of this logging
-/// by customizing the `logger` parameter to the ``init(mode:id:logger:)`` function, or by
+/// by customizing the `logger` parameter to the ``init(id:logger:)`` function, or by
 /// modifying the ``defaultLogger`` static property before you create your ``WebSocketActorSystem``.
 ///
 /// This library outputs at these log levels. Later levels include earlier levels.
