@@ -31,6 +31,64 @@ to your package dependencies in your `Package.swift` file. Then add:
 
 to the target dependencies of your package target.
 
+## Quick start
+
+In your shared library, import `WebSocketActors` and define your distributed actors.
+
+```swift
+import Distributed
+import WebSocketActors
+
+extension NodeIdentity {
+   public static let server = NodeIdentity(id: "server")
+}
+
+extension ActorIdentity {
+   public static let greeter = ActorIdentity(id: "greeter", node: .server)
+}
+
+public distributed Actor Greeter {
+   public typealias ActorSystem = WebSocketActorSystem
+
+   public distributed func greet(name: String) -> String {
+      return "Hello, \(name)!"
+   }
+}
+```
+
+In your server code, start the server in the background and make sure the server
+keeps running.
+
+```swift
+func main() async throws {
+   let address = ServerAddress(scheme: .insecure, host: "localhost", port: 8888)
+   let system = WebSocketActorSystem()
+   try await system.runServer(at: address)
+
+   _ = system.makeLocalActor(id: .greeter) {
+      Greeter(actorSystem: system)
+   }
+
+   while true {
+      try await Task.sleep(for: .seconds(1_000_000))
+   }
+}
+```
+
+On the client, connect to the server and call the remote actor.
+
+```swift
+func receiveGreeting() async throws {
+   let address = ServerAddress(scheme: .insecure, host: "localhost", port: 8888)
+   let system = WebSocketActorSystem()
+   try await system.connectClient(to: address)
+
+   let greeter = try Greeter.resolve(id: .greeter, using: system)
+   let greeting = try await greeter.greet("Alice")
+   print(greeting)
+}
+```
+
 ## Documentation
 
 The documentation for WebSocketActors includes both API documentation and getting-started articles:
