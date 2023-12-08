@@ -10,21 +10,28 @@ import Foundation
 final actor RemoteNodeDirectory {
     enum Status {
         case current(RemoteNode)
-        case future([Continuation<RemoteNode, Never>])
+        case future([TimedContinuation<RemoteNode>])
     }
 
     private var remoteNodes: [NodeIdentity: Status] = [:]
-    private var firstNode: [Continuation<RemoteNode, Never>] = []
+    private var firstNode: [TimedContinuation<RemoteNode>] = []
+    private var timeout: Duration
+    private var tolerance: Duration
+    
+    init(timeout: Duration = .seconds(5), tolerance: Duration = .seconds(0.5)) {
+        self.timeout = timeout
+        self.tolerance = tolerance
+    }
 
     func remoteNode(for actorID: ActorIdentity) async throws -> RemoteNode {
         if let nodeID = actorID.node {
-            return await requireRemoteNode(nodeID: nodeID)
+            return try await requireRemoteNode(nodeID: nodeID)
         }
         else if remoteNodes.count == 1 {
-            return await requireRemoteNode(nodeID: remoteNodes.first!.key)
+            return try await requireRemoteNode(nodeID: remoteNodes.first!.key)
         }
         else if remoteNodes.isEmpty {
-            return await waitForFirstNode()
+            return try await waitForFirstNode()
         }
         else {
             // If there are multiple remote nodes, and the actor isn't tagged
@@ -33,49 +40,64 @@ final actor RemoteNodeDirectory {
         }
     }
 
-    func waitForFirstNode() async -> RemoteNode {
-        await withCheckedContinuation { continuation in
+    private func withTimeout(nodeID: NodeIdentity?,
+                             action: @escaping (TimedContinuation<RemoteNode>) async -> ()) async throws -> RemoteNode
+    {
+        try await withThrowingContinuation { continuation in
             Task {
-                firstNode.append(continuation)
+                let tc = await TimedContinuation(continuation: continuation,
+                                                 error: WebSocketActorSystemError.timeoutWaitingForNodeID(id: nodeID, timeout: timeout),
+                                                 timeout: timeout,
+                                                 tolerance: tolerance)
+                await action(tc)
             }
         }
     }
 
-    func requireRemoteNode(nodeID: NodeIdentity) async -> RemoteNode {
+    func waitForFirstNode() async throws -> RemoteNode {
+        try await withTimeout(nodeID: nil) { tc in
+            self.firstNode.append(tc)
+        }
+    }
+
+    private func addContinuation(nodeID: NodeIdentity, continuation: TimedContinuation<RemoteNode>) async {
         if let status = remoteNodes[nodeID] {
             switch status {
             case .current(let node):
-                node
+                await continuation.resume(returning: node)
             case .future(let continuations):
-                await withContinuation { continuation in
-                    Task {
-                        remoteNodes[nodeID] = .future(continuations + [continuation])
-                    }
-                }
+                remoteNodes[nodeID] = .future(continuations + [continuation])
             }
         }
         else {
-            await withContinuation { continuation in
-                Task {
-                    remoteNodes[nodeID] = .future([continuation])
-                }
+            remoteNodes[nodeID] = .future([continuation])
+        }
+    }
+
+    func requireRemoteNode(nodeID: NodeIdentity) async throws -> RemoteNode {
+        if case .current(let node) = remoteNodes[nodeID] {
+            node
+        }
+        else {
+            try await withTimeout(nodeID: nodeID) { tc in
+                await self.addContinuation(nodeID: nodeID, continuation: tc)
             }
         }
     }
 
-    func opened(remote: RemoteNode) {
+    func opened(remote: RemoteNode) async {
         let nodeID = remote.nodeID
         if let status = remoteNodes[nodeID], case .future(let continuations) = status {
             remoteNodes[nodeID] = .current(remote)
             for continuation in continuations {
-                continuation.resume(returning: remote)
+                await continuation.resume(returning: remote)
             }
         }
         else {
             remoteNodes[nodeID] = .current(remote)
         }
         for continuation in firstNode {
-            continuation.resume(returning: remote)
+            await continuation.resume(returning: remote)
         }
         firstNode = []
     }
