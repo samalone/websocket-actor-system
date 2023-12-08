@@ -57,7 +57,7 @@ extension ActorIdentity {
    public static let greeter = ActorIdentity(id: "greeter", node: .server)
 }
 
-public distributed Actor Greeter {
+public distributed actor Greeter {
    public typealias ActorSystem = WebSocketActorSystem
 
    public distributed func greet(name: String) -> String {
