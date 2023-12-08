@@ -163,4 +163,53 @@ final class WebsocketActorSystemTests: XCTestCase {
         let greeting = try await serverAlice.introduceYourself()
         XCTAssertEqual(greeting, "Nice to meet you, Alice.")
     }
+
+    func testNoConnectionTimeout() async throws {
+        // Make sure we get a timeout if the user tries to call a remote actor
+        // without ever connecting to the server.
+
+        let client = WebSocketActorSystem(logger: Logger(label: "\(name) client").with(level: .trace))
+
+        // Create a local reference to Alice on the client
+        let clientAlice = try Person.resolve(id: .alice, using: client)
+
+        do {
+            _ = try await clientAlice.addOne(42)
+            XCTFail("Should fail to find remote node")
+        }
+        catch let WebSocketActorSystemError.timeoutWaitingForNodeID(nodeID, _) {
+            XCTAssertNil(nodeID)
+        }
+        catch {
+            XCTFail("Wrong error from actor call: \(error.localizedDescription)")
+        }
+    }
+
+    func testWrongConnectionTimeout() async throws {
+        // Make sure we get a timeout if the user tries to call a remote actor
+        // whose node ID doesn't match the remote node.
+        
+        let client = WebSocketActorSystem(logger: Logger(label: "\(name) client").with(level: .trace))
+        try await client.connectClient(to: serverAddress)
+        
+        // Create the real Alice on the server
+        _ = server.makeLocalActor(id: .alice) {
+            Person(actorSystem: server, name: "Alice")
+        }
+        
+        // Create a local reference to Alice on the client, but get the node ID wrong
+        let clientAlice = try Person.resolve(id: ActorIdentity(id: "alice", node: "wrong-server"), using: client)
+        
+        do {
+            _ = try await clientAlice.addOne(42)
+            XCTFail("Should fail to find remote node")
+        }
+        catch let WebSocketActorSystemError.timeoutWaitingForNodeID(nodeID, _) {
+            XCTAssertNotNil(nodeID)
+            XCTAssertEqual(nodeID?.id, "wrong-server")
+        }
+        catch {
+            XCTFail("Wrong error from actor call: \(error.localizedDescription)")
+        }
+    }
 }

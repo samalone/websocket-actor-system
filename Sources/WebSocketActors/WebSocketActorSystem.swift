@@ -98,7 +98,7 @@ public final class WebSocketActorSystem: DistributedActorSystem,
     /// Although this is a `var`, it is set during initialization and never changed.
     /// It is only a var to solve initialization problems.
     private var managers: [Manager] = []
-    private var remoteNodes = RemoteNodeDirectory()
+    private var remoteNodes: RemoteNodeDirectory
 
     /// The ``lock`` limits access to `managedActors` and `resolveOnDemandHandler`.
     /// These properties are used in synchronous code, and the lock makes them thread-safe.
@@ -108,11 +108,26 @@ public final class WebSocketActorSystem: DistributedActorSystem,
 
     public var monitor: ResilientTask.MonitorFunction?
 
+    /// Create a new ``WebSocketActorSystem``.
+    ///
+    /// - Parameter id: The ``NodeIdentity`` of this node. Defaults to a random value.
+    /// - Parameter logger: The ``Logger`` to use for logging. Defaults to ``defaultLogger``.
+    /// - Parameter connectionTimeout: The maximum time to wait for connections to be established.
+    ///   This controls now long to wait for a node to connect with a needed ``NodeIdentity``.
+    ///   Defaults to 5 seconds.
+    ///
+    /// Whenever a connection is made between a client and a server, they exchange node IDs to
+    /// identify themselves. If a client tries to call a remote actor, but the node ID of the remote actor
+    /// doesn't match an existing connection, the `connectionTimeout` controls how long the
+    /// actor system will wait for a connection to be established. If the timeout expires, the call will
+    /// throw a ``WebSocketActorSystemError/timeoutWaitingForNodeID(id:timeout:)`` error.
     public init(id: NodeIdentity = .random(),
-                logger: Logger = defaultLogger)
+                logger: Logger = defaultLogger,
+                connectionTimeout: Duration = .seconds(5))
     {
         nodeID = id
         self.logger = logger
+        remoteNodes = RemoteNodeDirectory(timeout: connectionTimeout)
     }
 
     @discardableResult
@@ -667,4 +682,6 @@ public enum WebSocketActorSystemError: Error, DistributedActorSystemError {
 
     /// Attempt to get or set node info outside of a distributed actor.
     case notInDistributedActor
+
+    case timeoutWaitingForNodeID(id: NodeIdentity?, timeout: Duration)
 }
