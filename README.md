@@ -72,7 +72,7 @@ keeps running.
 ```swift
 func main() async throws {
    let address = ServerAddress(scheme: .insecure, host: "localhost", port: 8888)
-   let system = WebSocketActorSystem()
+   let system = WebSocketActorSystem(id: .server)
    try await system.runServer(at: address)
 
    _ = system.makeLocalActor(id: .greeter) {
