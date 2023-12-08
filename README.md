@@ -113,3 +113,11 @@ For a basic example of writing a client/server app using WebSocketActors, see my
 simple iOS app that displays a counter above an "Increment" button. Clicking the
 increment button bumps the counters on _all_ client apps connected to the server
 in real time.
+
+## Additional reading
+
+- [Introducing Swift Distributed Actors](https://www.swift.org/blog/distributed-actors/) from the Swift Blog.
+- [Introducing Distributed Actors](https://swiftpackageindex.com/apple/swift-distributed-actors/main/documentation/distributedcluster/introduction) from Apple's [DistributedCluster](https://github.com/apple/swift-distributed-actors/) documentation
+- [Meet distributed actors in Swift](https://developer.apple.com/videos/play/wwdc2022/110356/) from WWDC 2022
+- Apple's documentation on the [Distributed](https://developer.apple.com/documentation/distributed) module.
+- Apple's [TicTacFish](https://developer.apple.com/documentation/swift/tictacfish_implementing_a_game_using_distributed_actors) sample code
