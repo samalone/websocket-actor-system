@@ -29,7 +29,7 @@ Add the package `https://github.com/samalone/websocket-actor-system` to your
 Xcode project, or add:
 
 ```swift
-   .package(url: "https://github.com/samalone/websocket-actor-system.git", from: "1.0"),
+   .package(url: "https://github.com/samalone/websocket-actor-system.git", from: "1.0.0"),
 ```
 
 to your package dependencies in your `Package.swift` file. Then add:
