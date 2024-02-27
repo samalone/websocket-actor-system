@@ -1,7 +1,7 @@
 import Distributed
 import Logging
 import NIO
-@testable import WebSocketActors
+import WebSocketActors
 import XCTest
 
 typealias DefaultDistributedActorSystem = WebSocketActorSystem

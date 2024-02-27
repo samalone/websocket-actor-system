@@ -30,13 +30,13 @@ import Foundation
     @inlinable func withContinuation<T>(function: String = #function,
                                         _ body: (UnsafeContinuation<T, Never>) -> Void) async -> T
     {
-        await withUnsafeContinuation(function: function, body)
+        await withUnsafeContinuation(body)
     }
 
     @inlinable func withThrowingContinuation<T>(function: String = #function,
                                                 _ body: (UnsafeContinuation<T, Error>) -> Void) async throws -> T
     {
-        try await withUnsafeThrowingContinuation(function: function, body)
+        try await withUnsafeThrowingContinuation(body)
     }
 #endif
 
