@@ -41,9 +41,9 @@ final actor RemoteNodeDirectory {
     }
 
     private func withTimeout(nodeID: NodeIdentity?,
-                             action: @escaping (TimedContinuation<RemoteNode>) async -> ()) async throws -> RemoteNode
+                             action: @Sendable @escaping (TimedContinuation<RemoteNode>) async -> ()) async throws -> RemoteNode
     {
-        try await withThrowingContinuation { continuation in
+        try await withThrowingContinuation { @Sendable continuation in
             Task {
                 let tc = await TimedContinuation(continuation: continuation,
                                                  error: WebSocketActorSystemError.timeoutWaitingForNodeID(id: nodeID, timeout: timeout),
@@ -56,8 +56,12 @@ final actor RemoteNodeDirectory {
 
     func waitForFirstNode() async throws -> RemoteNode {
         try await withTimeout(nodeID: nil) { tc in
-            self.firstNode.append(tc)
+            await self.queueRemoteNodeContinuation(tc: tc)
         }
+    }
+
+    private func queueRemoteNodeContinuation(tc: TimedContinuation<RemoteNode>) {
+        firstNode.append(tc)
     }
 
     private func addContinuation(nodeID: NodeIdentity, continuation: TimedContinuation<RemoteNode>) async {

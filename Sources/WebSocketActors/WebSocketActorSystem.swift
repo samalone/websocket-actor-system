@@ -531,13 +531,15 @@ public extension WebSocketActorSystem {
         taggedLogger.trace("Prepare [\(target)] call...")
 
         let localInvocation = invocation
-
+        let targetIdentifier = target.identifier
+        let genericSubs = localInvocation.genericSubs
+        let argumentData = localInvocation.argumentData
         let replyData = try await pendingReplies.sendMessage { callID in
             let callEnvelope = RemoteWebSocketCallEnvelope(callID: callID,
                                                            recipient: actor.id,
-                                                           invocationTarget: target.identifier,
-                                                           genericSubs: localInvocation.genericSubs,
-                                                           args: localInvocation.argumentData)
+                                                           invocationTarget: targetIdentifier,
+                                                           genericSubs: genericSubs,
+                                                           args: argumentData)
             let wireEnvelope = WebSocketWireEnvelope.call(callEnvelope)
 
             taggedLogger.trace("Write envelope: \(wireEnvelope)")
@@ -569,14 +571,17 @@ public extension WebSocketActorSystem {
 
         let remoteNode = try await remoteNodes.remoteNode(for: actor.id)
         let localInvocation = invocation
+        let targetIdentifier = target.identifier
+        let genericSubs = localInvocation.genericSubs
+        let argumentData = localInvocation.argumentData
 
         taggedLogger.trace("Prepare [\(target)] call...")
         _ = try await pendingReplies.sendMessage { callID in
             let callEnvelope = RemoteWebSocketCallEnvelope(callID: callID,
                                                            recipient: actor.id,
-                                                           invocationTarget: target.identifier,
-                                                           genericSubs: localInvocation.genericSubs,
-                                                           args: localInvocation.argumentData)
+                                                           invocationTarget: targetIdentifier,
+                                                           genericSubs: genericSubs,
+                                                           args: argumentData)
             let wireEnvelope = WebSocketWireEnvelope.call(callEnvelope)
 
             taggedLogger.trace("Write envelope: \(wireEnvelope)")

@@ -44,7 +44,7 @@ public final actor ClientManager: Manager {
         self.system = system
     }
 
-    func updateConnectionStatus(_ status: ResilientTask.Status) {
+    @Sendable func updateConnectionStatus(_ status: ResilientTask.Status) async {
         // We _must_ call the monitor in a separate task, or there will be
         // deadlock of the monitor tries to make a distributed actor call.
         Task {
@@ -139,7 +139,7 @@ public final actor ClientManager: Manager {
         if let remoteNodeID = remoteNodeID {
             return remoteNodeID
         }
-        return await withContinuation { continuation in
+        return await withCheckedContinuation { continuation in
             remoteNodeIDContinuations.append(continuation)
         }
     }

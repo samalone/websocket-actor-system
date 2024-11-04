@@ -53,7 +53,7 @@ public final actor ServerManager: Manager {
             channel
         }
         else {
-            await withContinuation { continuation in
+            await withCheckedContinuation { continuation in
                 waitingForChannel.append(continuation)
             }
         }
