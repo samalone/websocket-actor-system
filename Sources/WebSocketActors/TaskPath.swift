@@ -7,7 +7,7 @@
 
 import Foundation
 
-public struct TaskPath: CustomStringConvertible {
+public struct TaskPath: CustomStringConvertible, Sendable {
     @TaskLocal public static var current: TaskPath = .init()
 
     let path: String

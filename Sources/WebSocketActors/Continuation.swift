@@ -43,7 +43,7 @@ import Foundation
 /// A Continuation with a timeout. The continuation will either resume with
 /// the value passed to `resume(returning:)`, or with the provided
 /// error after the timeout expires.
-actor TimedContinuation<T> {
+actor TimedContinuation<T: Sendable> {
     var continuation: Continuation<T, Error>?
     var timeoutTask: Task<Void, Error>?
 

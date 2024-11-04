@@ -16,13 +16,13 @@ public struct ResilientTask {
 
     /// A function that is called to monitor the status of the `ResilientTask`.
     /// This function is async so the task can be monitored by an actor on the main thread.
-    public typealias MonitorFunction = (ResilientTask.Status) async -> Void
+    public typealias MonitorFunction = @Sendable (ResilientTask.Status) async -> Void
 
     /// The action that is run continuously.
-    public typealias Action = (SuccessfulInitializationCallback) async throws -> Void
+    public typealias Action = @Sendable (SuccessfulInitializationCallback) async throws -> Void
 
     /// The status of the `ResilientTask`. This is passed to the `monitor` function.
-    public enum Status {
+    public enum Status: Sendable {
         /// The action has been started, but has not yet called the `initializationSuccessful` callback.
         case initializing
 

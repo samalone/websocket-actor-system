@@ -5,7 +5,7 @@
  Wrappers around Logging package to add metadata automatically.
  */
 
-import Distributed
+@preconcurrency import Distributed
 import Foundation
 import Logging
 

@@ -390,15 +390,15 @@ public final class WebSocketActorSystem: DistributedActorSystem,
     /// Retrieve custom information about the remote node the actor is running on.
     /// You can use this to store context such as user login information.
     /// This function always returns nil when called outside of a distributed actor.
-    public func getNodeInfo(key: ActorSystemUserInfoKey) async throws -> Any? {
+    public func getNodeInfo(key: ActorSystemUserInfoKey) async throws -> (any Sendable)? {
         guard let remoteNode = RemoteNode.current else {
             throw WebSocketActorSystemError.notInDistributedActor
         }
-        return await remoteNode.userInfo[key]
+        return await remoteNode.getUserInfo(key: key)
     }
 
     /// Set custom information about the remote node the actor is running on.
-    public func setNodeInfo(key: ActorSystemUserInfoKey, value: Any) async throws {
+    public func setNodeInfo(key: ActorSystemUserInfoKey, value: any Sendable) async throws {
         guard let remoteNode = RemoteNode.current else {
             throw WebSocketActorSystemError.notInDistributedActor
         }

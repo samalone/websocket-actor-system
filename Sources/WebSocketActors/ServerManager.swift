@@ -71,7 +71,7 @@ public final actor ServerManager: Manager {
 
             try await TaskPath.with(name: "server connection") {
                 let channel = try await self.openServerChannel(host: host, port: port)
-                self.setChannel(channel)
+                await self.setChannel(channel)
 
                 await initialized()
 

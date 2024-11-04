@@ -15,7 +15,7 @@ final actor RemoteNode {
     let channel: WebSocketAgentChannel
     let inbound: NIOAsyncChannelInboundStream<WebSocketFrame>
     let outbound: WebSocketOutbound
-    var userInfo: [ActorSystemUserInfoKey: Any] = [:]
+    var userInfo: [ActorSystemUserInfoKey: any Sendable] = [:]
 
     @TaskLocal static var current: RemoteNode?
 
@@ -67,11 +67,11 @@ final actor RemoteNode {
         try await outbound.write(pingFrame)
     }
 
-    func getUserInfo(key: ActorSystemUserInfoKey) -> Any? {
+    func getUserInfo(key: ActorSystemUserInfoKey) -> (any Sendable)? {
         userInfo[key]
     }
 
-    func setUserInfo(key: ActorSystemUserInfoKey, value: Any) {
+    func setUserInfo(key: ActorSystemUserInfoKey, value: any Sendable) {
         userInfo[key] = value
     }
 }

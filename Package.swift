@@ -37,10 +37,14 @@ let package = Package(
                     .product(name: "NIOTransportServices", package: "swift-nio-transport-services"),
                     .product(name: "Logging", package: "swift-log"),
                     .product(name: "NIOAsyncWebSockets", package: "nio-async-websockets"),
+                ],
+                swiftSettings: [
+                    .enableExperimentalFeature("StrictConcurrency")
                 ]),
         .testTarget(name: "WebSocketActorTests",
                     dependencies: ["WebSocketActors"],
                     swiftSettings: [
+                        .enableExperimentalFeature("StrictConcurrency"),
                         .unsafeFlags(["-Xfrontend", "-validate-tbd-against-ir=none"]),
                     ]),
     ])

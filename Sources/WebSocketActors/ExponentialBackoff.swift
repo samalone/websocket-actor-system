@@ -18,7 +18,7 @@ public extension Double {
 ///
 /// > Note: See [Exponential backoff](https://en.wikipedia.org/wiki/Exponential_backoff). (2023, September 23). In
 /// Wikipedia.
-public struct ExponentialBackoff: Sequence {
+public struct ExponentialBackoff: Sequence, Sendable {
     /// The first value in the sequence. If this is >= ``jitter``, then the
     /// first value will be randomized with jitter.
     public var initialDelay: TimeInterval
