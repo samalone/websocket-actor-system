@@ -13,30 +13,34 @@ import Foundation
 #if DEBUG
     typealias Continuation = CheckedContinuation
 
-    @inlinable func withContinuation<T>(function: String = #function,
-                                        _ body: (CheckedContinuation<T, Never>) -> Void) async -> T
-    {
-        await withCheckedContinuation(function: function, body)
+    @inlinable func withContinuation<T>(
+      function: String = #function,
+      _ body: (CheckedContinuation<T, Never>) -> Void
+    ) async -> T {
+      await withCheckedContinuation(function: function, body)
     }
 
-    @inlinable func withThrowingContinuation<T>(function: String = #function,
-                                                _ body: (CheckedContinuation<T, Error>) -> Void) async throws -> T
-    {
-        try await withCheckedThrowingContinuation(function: function, body)
+    @inlinable func withThrowingContinuation<T>(
+      function: String = #function,
+      _ body: (CheckedContinuation<T, Error>) -> Void
+    ) async throws -> T {
+      try await withCheckedThrowingContinuation(function: function, body)
     }
 #else
     typealias Continuation = UnsafeContinuation
 
-    @inlinable func withContinuation<T>(function: String = #function,
-                                        _ body: (UnsafeContinuation<T, Never>) -> Void) async -> T
-    {
-        await withUnsafeContinuation(function: function, body)
+    @inlinable func withContinuation<T>(
+      function: String = #function,
+      _ body: (UnsafeContinuation<T, Never>) -> Void
+    ) async -> T {
+      await withUnsafeContinuation(body)
     }
 
-    @inlinable func withThrowingContinuation<T>(function: String = #function,
-                                                _ body: (UnsafeContinuation<T, Error>) -> Void) async throws -> T
-    {
-        try await withUnsafeThrowingContinuation(function: function, body)
+    @inlinable func withThrowingContinuation<T>(
+      function: String = #function,
+      _ body: (UnsafeContinuation<T, Error>) -> Void
+    ) async throws -> T {
+      try await withUnsafeThrowingContinuation(body)
     }
 #endif
 

@@ -52,9 +52,15 @@ public final actor ServerManager: Manager {
             channel
         }
         else {
-            await withCheckedContinuation { continuation in
-                waitingForChannel.append(continuation)
-            }
+#if DEBUG
+          await withCheckedContinuation { continuation in
+            waitingForChannel.append(continuation)
+          }
+#else
+          await withUnsafeContinuation { continuation in
+            waitingForChannel.append(continuation)
+          }
+#endif
         }
     }
 

@@ -32,15 +32,28 @@ actor PendingReplies {
     }
 
     nonisolated func sendMessage(_ body: @Sendable @escaping (CallID) async throws -> Void) async throws -> Data {
-        try await withCheckedThrowingContinuation { continuation in
-            Task {
-                let callID = await self.expectReply(continuation: continuation)
-                do {
-                    try await body(callID)
-                } catch {
-                    try await self.receivedError(callID: callID, error: error)
-                }
-            }
+#if DEBUG
+      try await withCheckedThrowingContinuation { continuation in
+        Task {
+          let callID = await self.expectReply(continuation: continuation)
+          do {
+            try await body(callID)
+          } catch {
+            try await self.receivedError(callID: callID, error: error)
+          }
         }
+      }
+#else
+      try await withUnsafeThrowingContinuation { continuation in
+        Task {
+          let callID = await self.expectReply(continuation: continuation)
+          do {
+            try await body(callID)
+          } catch {
+            try await self.receivedError(callID: callID, error: error)
+          }
+        }
+      }
+#endif
     }
 }

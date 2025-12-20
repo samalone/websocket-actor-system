@@ -138,8 +138,14 @@ public final actor ClientManager: Manager {
         if let remoteNodeID = remoteNodeID {
             return remoteNodeID
         }
+#if DEBUG
         return await withCheckedContinuation { continuation in
-            remoteNodeIDContinuations.append(continuation)
+          remoteNodeIDContinuations.append(continuation)
         }
+#else
+        return await withUnsafeContinuation { continuation in
+          remoteNodeIDContinuations.append(continuation)
+        }
+#endif
     }
 }
